@@ -1,0 +1,11 @@
+application:
+  root: C:\myapps\qgis_reports
+data: data_config.xlsx
+database:
+  database: database.domain
+  host: host.domain
+  port: 1521
+
+protected_data:
+  tables:
+    - THIS_SCHEMA.THIS_TABLE

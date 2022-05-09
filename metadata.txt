@@ -1,0 +1,9 @@
+[general]
+name=THAB-Reports
+description=Terrestrial Habitat Reporting
+about=Plugin for creating overlay reporting
+version=1.5
+qgisMinimumVersion=3.6
+author=Will Burt
+email=william.burt@gov.bc.ca
+repository=URL to the code repository
