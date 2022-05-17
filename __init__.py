@@ -230,7 +230,7 @@ class ThabReport:
             oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password)
             
             # init report with AOI
-            report_obj = report(aoi,self.APP_ROOT,feedback=None)
+            report_obj = report(aoi,template_path=self.APP_ROOT,feedback=None)
 
             # creates list of all fc to compare aoi too
             parsed_input = self.parse_config(xls_file)
@@ -588,12 +588,12 @@ class report:
             geojson:'filepath'
         }
     '''
-    
     TEMPLATE_RELATIVE_PATH = 'templates'
 
     def __init__(self,aoi,template_path,feedback):
         self.fb = feedback
         assert os.path.exists(os.path.join(template_path,self.TEMPLATE_RELATIVE_PATH))
+        self.template_path = template_path
         self.interests = []
         self.aoi = self.aoi_info(aoi)
         self.aoi_layer = aoi
@@ -738,7 +738,7 @@ class report:
         #build summary
         reportDate = datetime.datetime.utcnow().strftime('%B %d %Y - %H:%M:%S') + ' UTC'
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(
-            searchpath=os.path.join(self.PATH,self.TEMPLATE_RELATIVE_PATH))
+            searchpath=os.path.join(self.template_path,self.TEMPLATE_RELATIVE_PATH))
             )
         template = env.get_template('home.html')
         intersecting_layers = []
