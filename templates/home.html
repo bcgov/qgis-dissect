@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+{% block content %}
+    {% for i in interests %}
+          <article class="value {{ i['group']|replace(' ', '_') }} media content-section">
+            <div id= "value_data" class="media-body">
+              <div class="article-metadata">
+                {% if i['geojson'] is not none %}
+                <div class="custom-control custom-switch">
+                  <input type="checkbox" class="custom-control-input" id="{{ i['name']|replace(' ','_') }}_switch">
+                  <label class="custom-control-label" for="{{ i['name']|replace(' ','_') }}_switch">Draw on map</label>
+                </div>
+                {% endif %}
+              </div>
+              <h3><p class="article-title">{{ i['name'] }}</p></h3>
+              {% if i['value'] is defined %}
+              <p class="list-group-item list-group-item-light">Intersect Summary: {{ i['value'] | round(1) }} {{ i['unit'] }}</p>
+                {%if i['field_summary'].items()|length > 0 %}
+                <table class="table table-striped">
+                  <thead>
+                    <tr>
+                      <th scope="col">{{i['field_names_summary']}}</th>
+                      <th scope="col">Count</th>
+                      <th scope="col">Value</th>
+                      <th scope="col">Units</th>
+                    </tr>
+                  </thead>
+                  {% for f, s in i['field_summary'].items() %}
+                  <tr>
+                    <th scope="row" style="font-weight: normal">{{f}}</th>
+                    <td>{{s['count']}}</td>
+                    <td>{{s['value']|round(2)}}</td>
+                    <td>{{s['unit']}}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+                </table>
+                {%endif%}
+              {% else %}
+              <p class="list-group-item list-group-item-light">Intersect Summary: No overlaps</p>
+              {% endif %}
+            </div>
+          </article>
+    {% endfor %}
+{% endblock content %}

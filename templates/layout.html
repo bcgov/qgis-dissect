@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css" integrity="sha384-B0vP5xmATw1+K9KRQjQERJvTumQW0nPEzvF6L/Z6nronJ3oUOFUFpCjEUQouq2+l" crossorigin="anonymous">
+  <script
+			  src="https://code.jquery.com/jquery-3.6.0.min.js"
+			  integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4="
+			  crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.min.js" 
+        integrity="sha384-+YQ4JLhjyBLPDQt//I+STsc9iw4uQqACwlvpslubQzn4u2UU2UFM80nGisd026JF" 
+        crossorigin="anonymous"></script>
+
+  <style>
+    body {
+    background: #fafafa;
+    color: #333333;
+    margin-top: 5rem;
+    padding: 5px;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: #444444;
+    }
+    #map {
+        height: 400px;
+        width: 100%;
+    }
+    .bg-steel {
+      background-color: #5f788a;
+    }
+
+    .site-header .navbar-nav .nav-link {
+      color: #cbd5db;
+    }
+
+    .site-header .navbar-nav .nav-link:hover {
+      color: #ffffff;
+    }
+
+    .site-header .navbar-nav .nav-link.active {
+      font-weight: 500;
+    }
+
+    .content-section {
+      background: #ffffff;
+      padding: 5px 5px;
+      border: 1px solid #dddddd;
+      border-radius: 3px;
+      margin-bottom: 3px;
+    }
+
+    .article-title {
+      color: #444444;
+      font-size: large;
+      padding: 10px 1px 1px;
+    }
+
+    a.article-title:hover {
+      color: #428bca;
+      text-decoration: none;
+    }
+
+    .article-content {
+      white-space: pre;
+    }
+
+    .article-img {
+      height: 65px;
+      width: 65px;
+      margin-right: 16px;
+    }
+
+    .article-metadata {
+      padding-bottom: 1px;
+      margin-bottom: 1px;
+      border-bottom: 1px solid #e3e3e3
+    }
+
+    .article-metadata a:hover {
+      color: #333;
+      text-decoration: none;
+    }
+
+    .article-svg {
+      width: 25px;
+      height: 25px;
+      vertical-align: middle;
+    }
+
+    .account-img {
+      height: 125px;
+      width: 125px;
+      margin-right: 20px;
+      margin-bottom: 16px;
+    }
+
+    .account-heading {
+      font-size: 2.5rem;
+    }
+
+    .date-txt{
+      color: #dddddd
+    }
+    #habtab .nav-pills > li > a {
+      border-radius: 4px 4px 0 0 ;
+    }
+
+    #habtab .tab-content {
+      color : white;
+      background-color: #428bca;
+      padding : 5px 5px;
+    }
+
+  </style>
+
+  {% if title %}
+  <title>Referal Report - {{ title }}</title>
+  {% else %}
+  <title>Referal Report</title>
+  {% endif %}
+</head>
+<body>
+    <header class="site-header">
+      <nav class="navbar navbar-expand-md navbar-dark bg-steel fixed-top">
+        <div class="container">
+          <a class="navbar-brand mr-4" href="">Terrestrial Habitat Decision Support</a>
+          <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggle" aria-controls="navbarToggle" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="navbarToggle">
+              <div class="navbar-nav mr-auto"></div>
+              <div class="navbar-nav">
+                  <span class="nav-item nav-text date-txt">{{reportDate}}</span>
+              </div>
+          </div>
+        </div>
+      </nav>
+    </header>
+    <button type="button" class="btn btn-secondary" data-filter='all'>All</button>
+    <button type="button" class="btn btn-secondary" data-filter='Wildlife_and_Habitat'>Wildlife and Habitat</button>
+    <button type="button" class="btn btn-secondary" data-filter='Terrestrial_Ecosystem_Data'>Ecosystem Data</button>
+    <button type="button" class="btn btn-secondary" data-filter='Invasive_Species'>Invasives</button>
+    <button type="button" class="btn btn-secondary" data-filter='Legal_Land_Designations'>Land Designations</button>
+    <button type="button" class="btn btn-secondary" data-filter='Administrative_Boundaries'>Admin Boundaries</button>
+    <button type="button" class="btn btn-secondary" data-filter='Land_Use_Planning'>Land Use</button>
+    <button type="button" class="btn btn-secondary" data-filter='Land_Ownership_and_Status'>Ownership-Status</button>
+
+    <div class="tab-content">
+      <div class="content-section col-md-10">
+        <h3>Area Of Interest</h3>
+        
+        
+            <ul class="list-group">
+                <li class="list-group-item list-group-item-light">{{(aoi['area']/10000)|round(1)}} ha</li>
+            </ul>
+        <div class="content-section" id= 'map'></div>
+      </div>
+      <div class="row">
+        <div class="col-md-10">
+          {% block content %}{% endblock %}
+        </div>
+      </div>
+    </div>
+
+
+    <!-- Optional JavaScript -->
+
+    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+
+    <!-- Load Leaflet from CDN -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"
+    integrity="sha512-xodZBNTC5n17Xt2atTPuE1HxjVMSvLVW9ocqUKLsCC5CXdbqCmblAshOMAS6/keqq/sMZMZ19scR4PsZChSR7A=="
+    crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"
+    integrity="sha512-XQoYMqMTK8LvdxXYG3nZ448hOEQiglfqkJs1NOQV44cWnUrBc8PkAOcXy20w0vlaXaVUearIOBhiXZ5V3ynxwA=="
+    crossorigin=""></script>
+
+    <!-- Load Esri Leaflet from CDN -->
+    <script src="https://unpkg.com/esri-leaflet@3.0.0/dist/esri-leaflet.js"></script>
+    <script src="https://unpkg.com/esri-leaflet-vector@3.0.0/dist/esri-leaflet-vector.js"></script>
+
+    <script>
+        // enter API key and un-comment Imagery and Topographic vector layers below
+        const API_KEY = "";
+        const map = L.map("map",{ zoomControl:false }).setView([{{aoi.centerLatLong}}], 10);
+        //L.esri.basemapLayer("Topographic").addTo(map);
+        const basemapLayers = {
+          "Topographic(D)":L.esri.basemapLayer('Topographic').addTo(map)
+          //,"Imagery": L.esri.Vector.vectorBasemapLayer('ArcGIS:Imagery', {API_KEY: API_KEY}).addTo(map),
+          //"Topographic": L.esri.Vector.vectorBasemapLayer('ArcGIS:Topographic', {API_KEY: API_KEY}).addTo(map)
+        }
+
+        L.control.layers(basemapLayers).addTo(map);
+        L.geoJSON({{aoi.geojson}}).addTo(map);
+
+        // filtering js
+        
+        // cache collection of elements so only one dom search needed
+        var $valueElements = $('.value');
+
+        $('.btn').click(function(e){
+            e.preventDefault();
+            // get the category from the attribute
+            var filterVal = $(this).data('filter');
+
+            if(filterVal === 'all'){
+              $valueElements.show();
+            }else{
+              // hide all then filter the ones to show
+              $valueElements.hide().filter('.' + filterVal).show();
+            }
+        });
+
+        // add geojson layers for interests
+        geodata = {};
+        {% for i in interests %}
+        {% if i['geojson'] is not none %}
+        geodata ["{{ i['name']|replace(' ', '_') }}"] = {{ i['geojson']}};
+        {% endif%}
+        {% endfor %}
+
+        $(".custom-control-input").change(function(e){          
+          if ($(this).is(':checked')) {
+            if (!("map_layer" in $(this).data())){
+              map_geojson = geodata[this.id.replace("_switch","")];
+              var color = "#" + Math.floor(Math.random()*16777215).toString(16);
+              layer = L.geoJSON(map_geojson,{"color":color});
+              $(this).data("map_layer",layer);
+            }
+            else{
+              layer = $(this).data().map_layer;
+            }            
+            map.addLayer(layer);
+          }
+          else{
+            layer = $(this).data().map_layer;
+            map.removeLayer(layer)
+          } 
+        });
+        
+    </script>
+</body>
+</html>
