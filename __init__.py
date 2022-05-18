@@ -10,6 +10,7 @@
 #---------------------------------------------------------------------
 import sys
 import os
+import gc
 
 import jinja2
 import json
@@ -101,7 +102,8 @@ class ThabReport:
         del self.action
 
     def run(self):
-        
+        # set use selected features to true if 
+        # a selection exists in the assigned layer
         if self.first_start == True:
             self.first_start = False
             self.dlg = ThabReportDialog()
@@ -119,7 +121,7 @@ class ThabReport:
             aoi = self.dlg.vector_input.currentLayer()
             self.add_interests = self.dlg.addInterests.isChecked()
             assert isinstance(aoi, QgsVectorLayer)
-            report_result = self.processAlgorithm(aoi=aoi,
+            report_result = self.process_algorithm(aoi=aoi,
                                     user=user,
                                     password=password,
                                     config_xls= self.XLS_CONFIG,#self.dlg.xls_input.filePath(),
@@ -172,7 +174,7 @@ class ThabReport:
             data.append({worksheet:d})
         return data
 
-    def processAlgorithm(self,aoi,user,password,config_xls,output_html,use_selected=False):
+    def process_algorithm(self,aoi,user,password,config_xls,output_html,use_selected=False):
         
         aoi_in =aoi
         
@@ -269,9 +271,10 @@ class ThabReport:
                             features = aoi.getFeatures()
                             for item in features: #iterate through each item in aoi
                                 aoi.select(item.id())
+                                # method of calculating overlap is source dependent
                                 if (location == 'BCGW'):
                                     assert layer_table is not None
-                                    # get overlapping features
+                                    # ensure that input table exists and has a geometry
                                     has_table = oq_helper.has_table(layer_table)
                                     if has_table == True:
                                         has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
@@ -301,12 +304,15 @@ class ThabReport:
                                             # feedback.pushInfo(f"clip result count: {result.featureCount()}")
                                             feature_layer_lst.append(result)
                                     else:
+                                        # seems that table does not exist or does not have geometry
                                         if has_table:
                                             QgsMessageLog.logMessage(f"No data in table: BCGW {layer_table}",self.PLUGIN_NAME,Qgis.Warning)
                                         else:
                                             QgsMessageLog.logMessage(f"Can not access: BCGW {layer_table}",self.PLUGIN_NAME,Qgis.Warning)
                                 elif (location is not None):
                                     if os.path.exists(location):
+                                        # File based data source
+                                        # Allowed types: coverage, shp,kml,kmz,geojson,gdb,gpkg 
                                         rlayer = None
                                         vlayer = None
                                         filename, file_extension = os.path.splitext(location)
@@ -597,6 +603,7 @@ class report:
         self.interests = []
         self.aoi = self.aoi_info(aoi)
         self.aoi_layer = aoi
+        self.__size = 0
         
     def aoi_info(self,aoi):
         '''prepars key:value dict with keys name,area,geojson
@@ -700,6 +707,7 @@ class report:
             interest['geojson'] = None
             interest['field_summary'] = []
         self.interests.append(interest)
+        self.__size = self.__size + self.actualsize(interest)
     def vectorlayer_to_geojson(self,layer):
         '''Export QgsVectorlayer to temp geojson'''
         file_name = layer.name().replace(' ','_').replace('.','_') + ".geojson"
@@ -751,14 +759,32 @@ class report:
         layers = [i for i in self.interests]
         layer_sort = sorted(intersecting_layers, key=lambda k: k['value'],reverse=True) 
         layers = layer_sort + non_intersecting_layers
+        # TODO: need a size filter for exporting of geojson into html as html can get big
+        # either a) keep geojson adjacent to html (add js to make the map work)
+        # or b remove funtion for inclusion of  geojson / mapping of overlaps for big AOI
+        # ie: if self.__size > 524288000: remove geojson from layers
+
         ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate)
-        #ahtml = template.render(species=aoi.species, shape=aoi.poly,aoi=aoi)
+        
         with open(outfile, 'w') as f:
             f.write(ahtml)
         #the last hurah!
-        # arcpy.SetParameterAsText(1, outfile)
         return outfile
-
+    def actualsize(input_obj):
+        ''' calculate size of object
+        '''
+        memory_size = 0
+        ids = set()
+        objects = [input_obj]
+        while objects:
+            new = []
+            for obj in objects:
+                if id(obj) not in ids:
+                    ids.add(id(obj))
+                    memory_size += sys.getsizeof(obj)
+                    new.append(obj)
+            objects = gc.get_referents(*new)
+        return memory_size
 class oracle_pyqgis:
     ''' oracle_pyqgis has utilities for creating qgsVectorLayer objects for loading into QGIS
     constructor (database: str,
