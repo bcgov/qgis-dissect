@@ -6,8 +6,8 @@ A plugin reporting overlapping GIS datasets
 1. Place the contents of this repo in QGIS python plugin folder. 
     - For BC Gov employees working on the GTS, this path will be `C:\Users\<USERNAME>\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins\`
 2. Copy example `app.yml` and edit configuration. `root` is the folder containing the plugin
-3. Edit `__init__.py` and set `config_path` to the path to the configuration file `app.yml`
-4. Configure `data_config.xlsx` as desired. Store this file in the same path as `app.yml`
+3. Edit `__init__.py` and set `config_path` to the path to the configuration folder (containing `app.yml`)
+4. Configure `data_config.xlsx` as desired. Store this file in the same folder as `app.yml`
 5. [Optional] Configure html `templates` for output reports
 
 ## Usage
