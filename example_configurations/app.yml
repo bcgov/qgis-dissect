@@ -1,11 +1,14 @@
 application:
-  root: C:\myapps\qgis_reports
+  root: C:\myapps\QGIS\plugins\qgis_reports
+
 data: data_config.xlsx
+
 database:
   database: database.domain
   host: host.domain
   port: 1521
 
+# the geometries for protected data will not be exported, only intersect summary stats
 protected_data:
   tables:
     - THIS_SCHEMA.THIS_TABLE
