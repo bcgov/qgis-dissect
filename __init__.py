@@ -363,6 +363,8 @@ class ThabReport:
                                                     result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
                                                 else:
                                                     QgsMessageLog.logMessage(f"Definintion Query for {layer_title}: {location} | {layer_sql}",self.PLUGIN_NAME,Qgis.Warning)
+                                            if result is not None:
+                                                feature_layer_lst.append(result)
 
                                         elif rlayer is not None:
                                             enable_raster = False
@@ -443,6 +445,7 @@ class ThabReport:
                                         self.failed_layers.append(layer_title)
 
                                 aoi.removeSelection()
+                                result = None
                             if len(feature_layer_lst) > 0:
                                 try:
                                     if len(feature_layer_lst)>1:
