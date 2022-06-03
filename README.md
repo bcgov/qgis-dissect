@@ -1,6 +1,6 @@
 [![Lifecycle:Experimental](https://img.shields.io/badge/Lifecycle-Experimental-339999)](<Redirect-URL>)
 # qgis-reports-plugin
-A plugin reporting overlapping GIS datasets - NEW STUFF
+A plugin reporting overlapping GIS datasets
 
 ## Installation
 1. Place the contents of this repo in QGIS python plugin folder. 
