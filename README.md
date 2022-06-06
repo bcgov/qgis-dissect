@@ -3,22 +3,31 @@
 A plugin reporting overlapping GIS datasets
 
 ## Installation
-1. Place the contents of this repo in QGIS python plugin folder. 
-    - For BC Gov employees working on the GTS, this path will be `C:\Users\<USERNAME>\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins\`
-2. Copy example `app.yml` and edit configuration. `root` is the folder containing the plugin
-3. Edit `__init__.py` and set `config_path` to the path to the configuration folder (containing `app.yml`)
-4. Configure `data_config.xlsx` as desired. Store this file in the same folder as `app.yml`
-5. [Optional] Configure html `templates` for output reports
+1. Place the contents of this repo in QGIS processing scripts folder. 
+    - For BC Gov employees working on the GTS, this path will be `C:\Users\<USERNAME>\AppData\Roaming\QGIS\QGIS3\profiles\default\processing\scripts\`
+2. Set the environment variable `QENV_CONFIG_PATH` to the repo folder
+    - In QGIS: Settings --> Options --> System --> Environment, and then add `QENV_CONFIG_PATH`
+3. Configure `data_config.xlsx` as desired. TODO - add more explanation.
+
+### Optional additional configuration steps
+4. Create additional environment variables to populate default script parameters:
+    - Oracle database name and login: `QENV_DB`, `QENV_DB_USER`, `QENV_DB_PASS`
+    - Data configuration path: `QENV_XLS_CONFIG`
+    - Report output path: `QENV_OUT`
+5. Modify html `templates` for output reports
+6. Configure protected tables in `protected.yml` and add to `CONFIG_PATH` folder
+    - Protected tables will provide only intersect summary stats - geometries will not be exported.
 
 ## Usage
-1. Start QGIS (restarting QGIS after installation may be necessary to activate the plugin).
-2. Add a file that contains your area of interest and if needed make a selection from the file. 
-3. Click the QGIS Report button in the Plugins Toolbar.
-4. Select your area of interest layer from the dropdown
-    - If your AOI is a selection subset check the 'Use selected features' checkbox
-5. Fill out your database credentials
-6. Activate the 'Add overlapping interests to QGIS radio' button if desired
-7. Use the ... to navigate or just type in the path for your output report file (ending in `.html`)
+1. Start QGIS
+2. Add a file that contains your area of interest <!-- and if needed make a selection from the file.  -->
+3. Open the Processing Toolbox (CTRL+ALT+T) and select `dissect_alg` from Scripts at the bottom of the toolbox
+    - it may be necessary to reload scripts following installation - click 'Options' (wrench icon) and then OK
+4. Select your area of interest layer from the dropdown    <!-- - If your AOI is a selection subset check the 'Use selected features' checkbox -->
+5. Select your data configuration .xlsx file (using ... or by typing in path)
+6. Fill out your database credentials<!-- 6. Activate the 'Add overlapping interests to QGIS radio' button if desired -->
+7. Set output destination
+8. Run!
 
 ## Contributing
 We encourage contributions. Please see our [CONTRIBUTING](https://github.com/bcgov/gis-pantry/blob/master/CONTRIBUTING.md) guidelines. BC Government employees should also ensure they review [BC Open Source Development Employee Guide](https://github.com/bcgov/BC-Policy-Framework-For-GitHub/blob/master/BC-Open-Source-Development-Employee-Guide/README.md) 
