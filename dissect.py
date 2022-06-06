@@ -78,19 +78,6 @@ def enable_remote_debugging():
         QgsMessageLog.logMessage(repr(format_exception[0]), MESSAGE_CATEGORY, Qgis.Critical)
         QgsMessageLog.logMessage(repr(format_exception[1]), MESSAGE_CATEGORY, Qgis.Critical)
         QgsMessageLog.logMessage(repr(format_exception[2]), MESSAGE_CATEGORY, Qgis.Critical)
-
-# def enable_logging():
-#     logging.basicConfig(
-#     filename = os.path.join(self.CONFIG_PATH, '/logs', 'dissect.log'),
-#     # filemode = 'w',
-#     encoding='utf-8',
-#     level=logging.DEBUG,
-#     format = '%(name)s - %(levelname)s - %(message)s'
-#     )
-
-# enable_logging(self)
-
-
 class DissectAlg(QgsProcessingAlgorithm):
     """
     Extending QgsProcessingAlgorithm class.
