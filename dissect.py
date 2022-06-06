@@ -656,7 +656,9 @@ class DissectAlg(QgsProcessingAlgorithm):
             report_obj = None
             oq_helper = None
             logging.debug('Clean up complete')
-            return {}
+            result_msg = {}
+            result_msg[self.OUTPUT] = output
+            return result_msg
 
         except Exception as e:
             # clean up
