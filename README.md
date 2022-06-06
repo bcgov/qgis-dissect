@@ -12,8 +12,8 @@ A plugin reporting overlapping GIS datasets
 ### Optional additional configuration steps
 4. Create additional environment variables to populate default script parameters:
     - Oracle database name and login: `QENV_DB`, `QENV_DB_USER`, `QENV_DB_PASS`
-    - Data configuration path: `QENV_XLS_CONFIG`
-    - Report output path: `QENV_OUT`
+    - Data configuration file path: `QENV_XLS_CONFIG`
+    - Report output folder path: `QENV_OUT`
 5. Modify html `templates` for output reports
 6. Configure protected tables in `protected.yml` and add to `CONFIG_PATH` folder
     - Protected tables will provide only intersect summary stats - geometries will not be exported.
