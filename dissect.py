@@ -111,7 +111,7 @@ class DissectAlg(QgsProcessingAlgorithm):
 
         # TODO REMOVE self.iface = iface
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']      
-        self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"app.yml")
+        self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"protected.yml")
         # Declare instance attributes
         self.actions = []
         self.menu = self.tr(u'&ThabReport')
