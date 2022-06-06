@@ -63,14 +63,14 @@ import logging
 
 MESSAGE_CATEGORY = 'Messages'
 
-def enable_remote_debugging():
+def enable_remote_debugging(self):
     try:
         import ptvsd
         if ptvsd.is_attached():
             QgsMessageLog.logMessage("Remote Debug for Visual Studio is already active", MESSAGE_CATEGORY, Qgis.Info)
             logging.debug('Remote Debug for Visual Studio already attached')
             return
-        ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, '/ptvsd_log'))
+        ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, 'ptvsd_log'))
         QgsMessageLog.logMessage("Attached remote Debug for Visual Studio", MESSAGE_CATEGORY, Qgis.Info)
         logging.debug('Attached remote Debug for Visual Studio')
 
@@ -101,18 +101,21 @@ class DissectAlg(QgsProcessingAlgorithm):
     def config(self):
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
 
-        logging.basicConfig(
-        filename = os.path.join(self.CONFIG_PATH, 'logs', 'dissect.log'),
-        # filemode = 'w',
-        encoding='utf-8',
-        level=logging.DEBUG,
-        format = '%(name)s - %(levelname)s - %(message)s'
-        )
+        try:
+            logging.basicConfig(
+            filename = os.path.join(self.CONFIG_PATH, 'logs', 'dissect.log'),
+            # filemode = 'w',
+            encoding='utf-8',
+            level=logging.DEBUG,
+            format = '%(name)s - %(levelname)s - %(message)s'
+            )
+        except:
+            feedback.pushInfo("Could not enable logging")
         
         logging.debug('Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S"))
 
         try:
-            enable_remote_debugging()
+            enable_remote_debugging(self)
         except: 
             QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
             
@@ -355,7 +358,7 @@ class DissectAlg(QgsProcessingAlgorithm):
 
             # creates list of all fc to compare aoi too
             parsed_input = self.parse_config(xls_file)
-            logging.debug('Config xlsx parsed successfully')
+            logging.debug(f'Config xlsx parsed successfully ({xls_file})')
 
             ## TODO set up progress bar
             # progress.setValue(5)
@@ -370,15 +373,18 @@ class DissectAlg(QgsProcessingAlgorithm):
             i = (90 / estimated_count)
             feedback.pushInfo(f"Evaluating {estimated_count} interests")
             for tab_dict in parsed_input:
+                logging.debug(f'Processing tab_dict: {tab_dict}')
                 if feedback.isCanceled():
                     feedback.pushInfo('Process cancelled by user.')
                     return {}
                 for key in tab_dict:
+                    logging.debug(f'Processing key: {key}')
                     if feedback.isCanceled():
                         feedback.pushInfo('Process cancelled by user.')
                         return {}
                     tab = tab_dict[key]
                     for dic in tab:
+                        logging.debug(f'Processing dic: {dic}')
                         if feedback.isCanceled():
                             feedback.pushInfo('Process cancelled by user.')
                             return {}
@@ -386,7 +392,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                         layer_title = dic['Layer Name']
                         if layer_title is not None:
                             layer_title = layer_title.strip()
-                            logging.debug(f'Processing {layer_title}')
+                            logging.debug(f'Processing layer: {layer_title}')
                             layer_subgroup = dic['Layer Group Heading']
                             layer_table = dic['Feature Class Name']
                             if layer_table is not None:
@@ -401,8 +407,10 @@ class DissectAlg(QgsProcessingAlgorithm):
                             feature_layer_lst = [] # build empty layer list for each obj to be merged at end of unique feature cycle
                             #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
                             feedback.pushInfo('--- ' + str(layer_title) + ' ---')
+                            logging.debug(f'{layer_title} location: {location}')
                             features = aoi.getFeatures()
                             for item in features: # iterate through each item in aoi
+                                logging.debug(f'{layer_title} - feature item {item}')
                                 if feedback.isCanceled():
                                     feedback.pushInfo('Process cancelled by user.')
                                     return {}
@@ -592,6 +600,7 @@ class DissectAlg(QgsProcessingAlgorithm):
 
                             # TODO understand this - it is only for BCGW? (or raster) why?
                             if len(feature_layer_lst) > 0:
+                                logging.debug(f'{layer_title} Merging feature_layer_lst, length: {len(feature_layer_lst)}')
                                 try:
                                     if len(feature_layer_lst)>1:
                                         result = processing.run("native:mergevectorlayers", {'LAYERS':feature_layer_lst, 'CRS':QgsCoordinateReferenceSystem('EPSG:3005'),'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
@@ -618,27 +627,35 @@ class DissectAlg(QgsProcessingAlgorithm):
                             try:
                                 delta_time = round(time.time()-lyr_start,1)
                                 feedback.pushInfo(f"{layer_title}: {delta_time} seconds")
+                                logging.debug(f'{layer_title}: {delta_time} seconds to process')
                                 if result is not None:      
                                     if result.featureCount()>0:
                                         if self.add_interests is True:
+                                            logging.debug(f'{layer_title}: adding to map')
                                             QgsProject.instance().addMapLayer(result)
                                             self.tool_map_layers.append(result.id())
+                                            logging.debug(f'{layer_title}: added to map')
                                     if layer_table not in self.protected_tables:
                                         report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=False)
+                                        logging.debug(f'{layer_title}: added to report (non-secure)')
                                     else:
                                         report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=True)
+                                        logging.debug(f'{layer_title}: added to report (secure)')
                                 ## TODO progress bar
                                 # p = progress.value()
                                 # progress.setValue(p+i)
                             except:
                                 feedback.pushInfo(f"Failed to add interest {layer_title}")
+                                logging.error(f'{layer_title}: failed to add')
 
             # write report
             result = report_obj.report(output)
+            logging.debug('Report produced')
             # clean up
             QgsProject.instance().removeMapLayer(aoi.id())
             report_obj = None
             oq_helper = None
+            logging.debug('Clean up complete')
             return {}
 
         except Exception as e:
@@ -691,7 +708,7 @@ class report:
         self.template_path = template_path
         self.interests = []
         self.aoi = self.aoi_info(aoi)
-        self.aoi_layer = aoi
+        self.aoi_layer = aoi # TODO remove? never used?
         
     def aoi_info(self,aoi):
         '''prepars key:value dict with keys name,area,geojson
@@ -724,10 +741,12 @@ class report:
         ''' add an interest to the report
             parameters: interested_layer
         '''
+        
         # self.fb.pushInfo(f"REPORT add interest: {intersected_layer.name()}({intersected_layer.featureCount()})")
         interest = {'name':intersected_layer.name(),
             'group':group,
             'subgroup':subgroup}
+        logging.debug(f'Building report: adding interest {interest}')
         fieldNames = [field.name() for field in intersected_layer.fields()]
         summary_dict = {}
         d = {'count':0,'length':0.0,'area':0.0}
@@ -748,6 +767,7 @@ class report:
                 l = geom.length()
                 d['length'] += l
             else:
+                logging.error(f"Unexpected geometry type:{geom_type} during add_interest")
                 raise Exception (f"Unexpected geometry type:{geom_type}")
             value_merge = []
             for sf in summary_fields:
@@ -772,7 +792,7 @@ class report:
                     summary_dict[value_string]['unit']='ha'
             else:
                 field_string=''
-
+        
         if (d['area']>0):
             interest['value'] = d['area']/10000
             interest['unit'] = 'ha'
@@ -790,18 +810,23 @@ class report:
             if secure is True:
                 interest['geojson'] = None   
             else: 
+                logging.debug(f'Exporting {intersected_layer} to geojson')
                 interest['geojson'] = self.vectorlayer_to_geojson(intersected_layer)
+                logging.debug('Exported to geojson, geojson returned')
         else:
             interest['geojson'] = None
             interest['field_summary'] = []
         self.interests.append(interest)
+        logging.debug('Interest appended to interests')
     def vectorlayer_to_geojson(self,layer):
         '''Export QgsVectorlayer to temp geojson'''
         file_name = layer.name().replace(' ','_').replace('.','_') + ".geojson"
         file_name = file_name.replace('/','_')
         file_name = file_name.replace('\\','_')
+        logging.debug('V2GEOJSON: geojson name built')
         temp_path = os.environ['TEMP']
         geojson_path = os.path.join(temp_path,file_name)
+        logging.debug('V2GEOJSON: geojson path built')
         destcrs = QgsCoordinateReferenceSystem("EPSG:4326")
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.driverName = "GeoJSON"
@@ -810,18 +835,26 @@ class report:
         options.ct = QgsCoordinateTransform(layer.sourceCrs() ,destcrs,context)
         if layer.selectedFeatureCount()>0:
             options.onlySelectedFeatures = True
+            logging.debug('V2GEOJSON: about to write (selected feat only)')
             # TODO use .writeAsVectorFormatV3
-            error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
+            error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            # error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
+            logging.debug('V2GEOJSON: json written')
         else:
-            error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            logging.debug('V2GEOJSON: about to write')
+            error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
             #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON")
-        
+            logging.debug('V2GEOJSON: json written')
+
         assert error[0] == 0, 'error not equal to 0'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
         # TODO get feedback working within report class
         # self.fb.pushInfo(f"export json --> {geojson_path}")
+        logging.debug('V2GEOJSON: assert passed, about to load json')
         geojson = self.load_geojson(geojson_path)
+        logging.debug('V2GEOJSON: json loaded')
         return geojson
 
     
