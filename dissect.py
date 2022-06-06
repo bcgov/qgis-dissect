@@ -68,9 +68,12 @@ def enable_remote_debugging():
         import ptvsd
         if ptvsd.is_attached():
             QgsMessageLog.logMessage("Remote Debug for Visual Studio is already active", MESSAGE_CATEGORY, Qgis.Info)
+            logging.debug('Remote Debug for Visual Studio already attached')
             return
-        ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.QCONFIG_PATH, '/ptvsd_log'))
+        ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, '/ptvsd_log'))
         QgsMessageLog.logMessage("Attached remote Debug for Visual Studio", MESSAGE_CATEGORY, Qgis.Info)
+        logging.debug('Attached remote Debug for Visual Studio')
+
     except Exception as e:
         exc_type, exc_value, exc_traceback = sys.exc_info()
         format_exception = traceback.format_exception(exc_type, exc_value, exc_traceback)
@@ -211,10 +214,10 @@ class DissectAlg(QgsProcessingAlgorithm):
             dbpass = ''
         else:
             dbpass = os.environ['QENV_DB_PASS']
-        if '' not in os.environ:
+        if 'QENV_OUT' not in os.environ:
             outfile = ''
         else:
-            outifle = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+            outfile = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
         self.addParameter(
             QgsProcessingParameterVectorLayer(
                 self.AOI,
