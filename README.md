@@ -22,7 +22,10 @@ A plugin reporting overlapping GIS datasets
 1. Start QGIS
 2. Add a file that contains your area of interest <!-- and if needed make a selection from the file.  -->
 3. Open the Processing Toolbox (CTRL+ALT+T) and select `dissect_alg` from Scripts at the bottom of the toolbox
-    - it may be necessary to reload scripts following installation - click 'Options' (wrench icon) and then OK
+    - it may be necessary to reload scripts following installation - click 'Options' (wrench) and then OK
+
+![Processing tool box - use the wrench to reload scripts](https://user-images.githubusercontent.com/38586679/172197256-375e4987-6d51-44ea-840e-a7e92e742434.png)
+
 4. Select your area of interest layer from the dropdown    <!-- - If your AOI is a selection subset check the 'Use selected features' checkbox -->
 5. Select your data configuration .xlsx file (using ... or by typing in path)
 6. Fill out your database credentials<!-- 6. Activate the 'Add overlapping interests to QGIS radio' button if desired -->
