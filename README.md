@@ -15,7 +15,7 @@ A plugin reporting overlapping GIS datasets
     - Data configuration file path: `QENV_XLS_CONFIG`
     - Report output folder path: `QENV_OUT`
 5. Modify html `templates` for output reports
-6. Configure protected tables in `protected.yml` and add to `CONFIG_PATH` folder
+6. Configure protected tables in `protected.yml`
     - Protected tables will provide only intersect summary stats - geometries will not be exported.
 
 ## Usage
