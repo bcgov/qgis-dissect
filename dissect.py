@@ -55,14 +55,11 @@ import time
 import yaml
 import re
 from PyQt5.QtWidgets import QAction, QMessageBox, QProgressBar,QDockWidget,QTabWidget
-#from .thab_dialog import ThabReportDialog
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-# unnecessary?
-# def classFactory(iface):
-#     return Dissect(iface)
-
+# dev only
+import logging
 
 MESSAGE_CATEGORY = 'Messages'
 
@@ -92,9 +89,6 @@ class DissectAlg(QgsProcessingAlgorithm):
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
-    # TODO confirm unncessary?
-    PLUGIN_NAME = 'QGIS Report'
-
     #INPUT = 'INPUT'
     AOI = 'AOI'
     XLS_CONFIG_IN = 'XLS_CONFIG_IN'
@@ -109,46 +103,17 @@ class DissectAlg(QgsProcessingAlgorithm):
         except: 
             QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
 
-        # TODO REMOVE self.iface = iface
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']      
         self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"protected.yml")
         # Declare instance attributes
         self.actions = []
         self.menu = self.tr(u'&ThabReport')
         self.protected_tables = self.get_protected_tables(self.SECURE_TABLES_CONFIG)
-        
-        # # TODO REMOVE
-        # # Check if plugin was started the first time in current QGIS session
-        # # Must be set in initGui() to survive plugin reloads
-        # self.first_start = None
-        
+               
         # TODO add checkbox for 'add interests to map'
         self.add_interests = True
         self.tool_map_layers = []
         self.failed_layers =[]
-        # TODO REMOVE self.dlg = ThabReportDialog()
-
-        # added this to inherit from parent (QqsProcessingAlgorithm)
-        # super(DissectAlg, self).__init__()
-
-    # TODO REMOVE
-    '''
-    This would add a button for the script. unload() removes it
-    '''
-    # def initGui(self):
-        
-    #     self.action = QAction(self.PLUGIN_NAME, self.iface.mainWindow())
-    #     self.action.triggered.connect(self.run)
-    #     self.iface.addToolBarIcon(self.action)
-    #     # self.add_action(icon_path=None,
-    #     #                 text='Go!',
-    #     #                 callback=self.run,
-    #     #                 parent=self.iface.mainWindow)
-    #     self.first_start = True
-    
-    # def unload(self):
-    #     self.iface.removeToolBarIcon(self.action)
-    #     del self.action
 
     def get_protected_tables(table,config_file):
         ''' Returns list of protected tables
@@ -346,21 +311,6 @@ class DissectAlg(QgsProcessingAlgorithm):
                 aoi = processing.run('native:reprojectlayer', parameter)['OUTPUT']
             QgsProject.instance().addMapLayer(aoi,False)
             
-            # # TODO remove - dialog only shows polygons when selecting input so no need for this
-            # if aoi.wkbType() == QgsWkbTypes.Point:
-            #     raise TypeError('Area of Interest cannot be a point geometry')
-            # if aoi.wkbType() == QgsWkbTypes.LineString:
-            #     raise TypeError('Area of Interest cannot be a line geometry')                
-            
-            ## TODO remove - related to using iface to send to message log
-            # dock = self.iface.mainWindow().findChild(QDockWidget, 'MessageLog')
-            # tabs = dock.findChild(QTabWidget, 'tabWidget')
-            # for tab in range(tabs.count()):
-            #     text = tabs.tabText(tab)
-            #     if text == self.PLUGIN_NAME:
-            #         tabs.setCurrentIndex(tab)
-            #         break
-
             # create db object 
             oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password)
 
@@ -665,14 +615,6 @@ class DissectAlg(QgsProcessingAlgorithm):
         # # get features from source
         # total = 100.0 / aoi.featureCount() if aoi.featureCount() else 0
         # features = aoi.getFeatures()
-
-        # for current, feature in enumerate(features):
-        #     # Stop the algorithm if cancel button has been clicked
-        #     if feedback.isCanceled():
-        #         break
-
-        #     # Add a feature in the sink
-        #     sink.addFeature(feature, QgsFeatureSink.FastInsert)
 
         #     # Update the progress bar
         #     feedback.setProgress(int(current * total))
