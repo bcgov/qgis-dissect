@@ -69,7 +69,7 @@ def enable_remote_debugging():
         if ptvsd.is_attached():
             QgsMessageLog.logMessage("Remote Debug for Visual Studio is already active", MESSAGE_CATEGORY, Qgis.Info)
             return
-        ptvsd.enable_attach(address=('localhost', 5678), log_dir=r'\\spatialfiles.bcgov\srm\nel\Local\Geomatics\Workarea\rvinegar\p2022\003_thab_plugin\processing-script\ptvsd_log')
+        ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.QCONFIG_PATH, '/ptvsd_log'))
         QgsMessageLog.logMessage("Attached remote Debug for Visual Studio", MESSAGE_CATEGORY, Qgis.Info)
     except Exception as e:
         exc_type, exc_value, exc_traceback = sys.exc_info()
@@ -78,6 +78,17 @@ def enable_remote_debugging():
         QgsMessageLog.logMessage(repr(format_exception[0]), MESSAGE_CATEGORY, Qgis.Critical)
         QgsMessageLog.logMessage(repr(format_exception[1]), MESSAGE_CATEGORY, Qgis.Critical)
         QgsMessageLog.logMessage(repr(format_exception[2]), MESSAGE_CATEGORY, Qgis.Critical)
+
+# def enable_logging():
+#     logging.basicConfig(
+#     filename = os.path.join(self.CONFIG_PATH, '/logs', 'dissect.log'),
+#     # filemode = 'w',
+#     encoding='utf-8',
+#     level=logging.DEBUG,
+#     format = '%(name)s - %(levelname)s - %(message)s'
+#     )
+
+# enable_logging(self)
 
 
 class DissectAlg(QgsProcessingAlgorithm):
@@ -96,14 +107,26 @@ class DissectAlg(QgsProcessingAlgorithm):
     USER = 'USER'
     PASSWORD = 'PASSWORD'
     OUTPUT = 'OUTPUT'
-      
+          
     def config(self):
+        self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
+
+        logging.basicConfig(
+        filename = os.path.join(self.CONFIG_PATH, 'logs', 'dissect.log'),
+        # filemode = 'w',
+        encoding='utf-8',
+        level=logging.DEBUG,
+        format = '%(name)s - %(levelname)s - %(message)s'
+        )
+        
+        logging.debug('Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S"))
+
         try:
             enable_remote_debugging()
         except: 
             QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
+            
 
-        self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']      
         self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"protected.yml")
         # Declare instance attributes
         self.actions = []
@@ -261,6 +284,8 @@ class DissectAlg(QgsProcessingAlgorithm):
             feedback.pushInfo("Debug for VS not enabled")
 
         self.config()
+        logging.debug('Alg class initialized')
+
 
         # Retrieve the feature source and sink. The 'dest_id' variable is used
         # to uniquely identify the feature sink, and must be included in the
@@ -319,6 +344,8 @@ class DissectAlg(QgsProcessingAlgorithm):
 
             # creates list of all fc to compare aoi too
             parsed_input = self.parse_config(xls_file)
+            logging.debug('Config xlsx parsed successfully')
+
             ## TODO set up progress bar
             # progress.setValue(5)
             
@@ -348,6 +375,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                         layer_title = dic['Layer Name']
                         if layer_title is not None:
                             layer_title = layer_title.strip()
+                            logging.debug(f'Processing {layer_title}')
                             layer_subgroup = dic['Layer Group Heading']
                             layer_table = dic['Feature Class Name']
                             if layer_table is not None:
@@ -407,6 +435,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                                     #         feedback.pushInfo(f"Can not access: BCGW {layer_table}")
                                 elif (location is not None):
                                     if os.path.exists(location):
+                                        logging.debug(f'{layer_title} exists, starting processing')
                                         rlayer = None
                                         vlayer = None
                                         filename, file_extension = os.path.splitext(location)
@@ -441,11 +470,14 @@ class DissectAlg(QgsProcessingAlgorithm):
                                         else:
                                             feedback.pushInfo(f"No loading function for {layer_title}: {location}")
                                         if vlayer is not None:
+                                            logging.debug(f'{layer_title} is vector layer, starting processing')
                                             try:
                                                 if vlayer.isValid():
                                                     vlayer.setSubsetString(layer_sql)
                                                     if vlayer.featureCount()>0:
+                                                        logging.debug(f'{layer_title} has valid geometry')
                                                         result = processing.run("native:clip", {'INPUT':vlayer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                        logging.debug(f'{layer_title} clipped')
                                                     else:
                                                         feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
                                                 else:
@@ -453,13 +485,17 @@ class DissectAlg(QgsProcessingAlgorithm):
                                             except:
                                                 vlayer.setSubsetString(layer_sql)
                                                 if vlayer.featureCount()>0:
+                                                    logging.debug(f'{layer_title} has invalid geometry, fixing...')
                                                     f_layer = processing.run("native:fixgeometries", {'INPUT':vlayer,'OUTPUT':'memory:{layer_title}fix'})['OUTPUT']
+                                                    logging.debug(f'{layer_title} geo fixed')
                                                     result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                    logging.debug(f'{layer_title} clipped')
                                                 else:
                                                     feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
                                             finally:
                                                 if result is not None:
                                                     feature_layer_lst.append(result)
+                                                    logging.debug(f'{layer_title} added to feature_layer_lst')
                                                     feedback.pushInfo(f"{layer_title}: {result.featureCount()} overlapping features found")
                                         elif rlayer is not None:
                                             enable_raster = False
