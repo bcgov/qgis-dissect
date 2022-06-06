@@ -194,6 +194,27 @@ class DissectAlg(QgsProcessingAlgorithm):
         with some other properties.
         """
         # TODO add param for useSelected checkbox
+        if 'QENV_DB_USER' not in os.environ:
+            user = ''
+        else:
+            user = os.environ['QENV_DB_USER']
+        
+        if 'QENV_DB' not in os.environ:
+            db = ''
+        else:
+            db = os.environ['QENV_DB']
+        if 'QENV_XLS_CONFIG' not in os.environ:
+            xls_config = ''
+        else:
+            xls_config = os.environ['QENV_XLS_CONFIG']
+        if 'QENV_DB_PASS' not in os.environ:
+            dbpass = ''
+        else:
+            dbpass = os.environ['QENV_DB_PASS']
+        if '' not in os.environ:
+            outfile = ''
+        else:
+            outifle = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
         self.addParameter(
             QgsProcessingParameterVectorLayer(
                 self.AOI,
@@ -208,28 +229,28 @@ class DissectAlg(QgsProcessingAlgorithm):
                 description = self.tr('Input .xlsx coniguration file'),
                 optional = False,
                 extension = "xlsx",
-                defaultValue = os.environ['QENV_XLS_CONFIG']
+                defaultValue = xls_config
             )
         )
         self.addParameter(
             QgsProcessingParameterString(
                 self.DATABASE,
                 self.tr('Database'),
-                defaultValue = os.environ['QENV_DB']
+                defaultValue = db
             )
         )
         self.addParameter(
             QgsProcessingParameterString(
                 self.USER,
                 self.tr('DB Username'),
-                defaultValue = os.environ['QENV_DB_USER']
+                defaultValue = user
             )
         )
         self.addParameter(
             QgsProcessingParameterString(
                 self.PASSWORD,
                 self.tr('DB Password'),
-                defaultValue = os.environ['QENV_DB_PASS']
+                defaultValue = dbpass
             )
         )
         self.addParameter(
@@ -237,7 +258,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                 self.OUTPUT,
                 self.tr('Output File eg. T:/myproject/myproject_overlap_report.html'),
                 'HTML files (*.html)',
-                defaultValue = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+                defaultValue = outfile
             )
         )
 
