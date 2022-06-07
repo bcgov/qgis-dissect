@@ -922,6 +922,7 @@ class oracle_pyqgis:
     def __del__(self):
         # close db before destruction
         self.close_db_connection()
+        self.db = None
 
     def open_db_connection(self):
         ''' open_db_connection creates and opens a db connection to the oracle database
@@ -943,9 +944,9 @@ class oracle_pyqgis:
         ''' close_db_connection closes db connection to the oracle database
         '''
         if self.db.isOpen():
-            logging.debug(f'db connection closed')
             self.db.close()
-        
+            logging.debug(f'db connection closed')
+                
     def create_layer_anyinteract(self,overlay_layer,layer_name,db_table,sql):
         ''' creates a qgsvectorlayer using an anyinteract query
             overlay_layer: qgsvectorlayer, QgsFeature
