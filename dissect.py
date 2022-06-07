@@ -35,6 +35,7 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterString,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFileDestination,
+                       QgsProcessingParameterAuthConfig,
                        QgsWkbTypes,
                        QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform,
@@ -45,7 +46,10 @@ from qgis.core import (QgsProcessing,
                        QgsDataSourceUri,
                        QgsProject,
                        QgsMessageLog,
-                       Qgis
+                       Qgis,
+                       QgsApplication,
+                       QgsAuthManager,
+                       QgsAuthMethodConfig
                        )
 
 from qgis import processing
@@ -94,8 +98,7 @@ class DissectAlg(QgsProcessingAlgorithm):
     AOI = 'AOI'
     XLS_CONFIG_IN = 'XLS_CONFIG_IN'
     DATABASE = 'DATABASE'
-    USER = 'USER'
-    PASSWORD = 'PASSWORD'
+    AUTH_CONFIG = 'AUTH_CONFIG'
     OUTPUT = 'OUTPUT'
           
     def config(self):
@@ -198,13 +201,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         """
         Here we define the inputs and output of the algorithm, along
         with some other properties.
-        """
-        # TODO add param for useSelected checkbox
-        if 'QENV_DB_USER' not in os.environ:
-            user = ''
-        else:
-            user = os.environ['QENV_DB_USER']
-        
+        """      
         if 'QENV_DB' not in os.environ:
             db = ''
         else:
@@ -213,21 +210,17 @@ class DissectAlg(QgsProcessingAlgorithm):
             xls_config = ''
         else:
             xls_config = os.environ['QENV_XLS_CONFIG']
-        if 'QENV_DB_PASS' not in os.environ:
-            dbpass = ''
-        else:
-            dbpass = os.environ['QENV_DB_PASS']
         if 'QENV_OUT' not in os.environ:
             outfile = ''
         else:
             outfile = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+        
         self.addParameter(
             QgsProcessingParameterVectorLayer(
                 self.AOI,
                 self.tr('Area of Interest'),
                 [QgsProcessing.TypeVectorPolygon]
             )
-
         )
         self.addParameter(
             QgsProcessingParameterFile(
@@ -238,6 +231,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                 defaultValue = xls_config
             )
         )
+        # would it be appropriate to take this as 'realm' from Auth DB?
         self.addParameter(
             QgsProcessingParameterString(
                 self.DATABASE,
@@ -246,17 +240,10 @@ class DissectAlg(QgsProcessingAlgorithm):
             )
         )
         self.addParameter(
-            QgsProcessingParameterString(
-                self.USER,
-                self.tr('DB Username'),
-                defaultValue = user
-            )
-        )
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.PASSWORD,
-                self.tr('DB Password'),
-                defaultValue = dbpass
+            QgsProcessingParameterAuthConfig(
+                self.AUTH_CONFIG,
+                self.tr('Database authentication'),
+                optional = True
             )
         )
         self.addParameter(
@@ -306,8 +293,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         # dictionary returned by the processAlgorithm function.
         aoi = self.parameterAsVectorLayer(parameters, 'AOI', context)
         config_xls = self.parameterAsFile(parameters, 'XLS_CONFIG_IN', context)
-        user = self.parameterAsString(parameters, 'USER', context)
-        password = self.parameterAsString(parameters, 'PASSWORD', context)
+        auth_method_id = self.parameterAsString(parameters, 'AUTH_CONFIG', context)
         output_html = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
         database = self.parameterAsString(parameters, 'DATABASE', context)
         # do these manually for now (not in dialogue)
@@ -324,7 +310,21 @@ class DissectAlg(QgsProcessingAlgorithm):
         aoi_in = aoi
         xls_file = config_xls
         output = output_html
-
+        
+        # get the application's authenticaion manager
+        auth_mgr = QgsApplication.authManager()
+        # create an empty authmethodconfig object
+        auth_cfg = QgsAuthMethodConfig()
+        # load config from manager to the new config instance and decrypt sensitive data
+        auth_mgr.loadAuthenticationConfig(auth_method_id, auth_cfg, True)
+        # get the configuration information (including username and password)
+        auth_info = auth_cfg.configMap()
+        try:
+            user = auth_info['username']
+            password = auth_info['password']
+        except:
+            user = ''
+            password = ''
 
         # TODO set up use selected feature
         use_selected = False
