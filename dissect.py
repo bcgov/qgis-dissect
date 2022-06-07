@@ -115,7 +115,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         except:
             feedback.pushInfo("Could not enable logging")
         
-        logging.debug('Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S"))
+        logging.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
 
         try:
             enable_remote_debugging(self)
@@ -416,42 +416,49 @@ class DissectAlg(QgsProcessingAlgorithm):
                                     return {}
                                 aoi.select(item.id())
                                 if (location == 'BCGW'):
-                                    feedback.pushInfo('skipping BCGW layer - for now')
-                                    # assert layer_table is not None
-                                    # # get overlapping features
-                                    # has_table = oq_helper.has_table(layer_table)
-                                    # if has_table == True:
-                                    #     has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
-                                    # else:
-                                    #     has_spatial_rows = False
-                                    # if has_table == True and has_spatial_rows == True:
-                                    #     # get features from bbox
-                                    #     selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
-                                    #     try:
-                                    #         if selected_features.featureCount()>0:
-                                    #             # clip them
-                                    #             result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                    #             if result.featureCount()>0:
-                                    #                 feedback.pushInfo(f"{layer_title} with ({result.featureCount()}) overlapping features")
-                                    #         else:
-                                    #             # return layer with no features
-                                    #             result = selected_features
-                                    #     except:
-                                    #         try:
-                                    #             f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
-                                    #             result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                
-                                    #         except:
-                                    #             feedback.pushInfo(f"Error in accessing {layer_title}")
-                                    #     if result is not None:
-                                    #         # feedback.pushInfo(f"result type {type(result)}")
-                                    #         # feedback.pushInfo(f"clip result count: {result.featureCount()}")
-                                    #         feature_layer_lst.append(result)
-                                    # else:
-                                    #     if has_table:
-                                    #         feedback.pushInfo(f"No data in table: BCGW {layer_table}")
-                                    #     else:
-                                    #         feedback.pushInfo(f"Can not access: BCGW {layer_table}")
+                                    logging.debug(f'{layer_title} - is in BCGW')
+                                    assert layer_table is not None
+                                    # get overlapping features
+                                    has_table = oq_helper.has_table(layer_table)
+                                    if has_table == True:
+                                        has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
+                                    else:
+                                        has_spatial_rows = False
+                                    if has_table == True and has_spatial_rows == True:
+                                        logging.debug(f'{layer_title} - table and rows confirmed')
+                                        # get features from bbox
+                                        selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
+                                        try:
+                                            if selected_features.featureCount()>0:
+                                                # clip them
+                                                result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                if result.featureCount()>0:
+                                                    feedback.pushInfo(f"{layer_title} with ({result.featureCount()}) overlapping features")
+                                                    logging.debug(f"{layer_title} returned with ({result.featureCount()}) overlapping features")
+                                            else:
+                                                # return layer with no features
+                                                result = selected_features
+                                                logging.debug(f"{layer_title} returned no overlapping features")
+                                        except:
+                                            try:
+                                                logging.debug(f"{layer_title} fixing geometry")
+                                                f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
+                                                result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                logging.debug(f"{layer_title} geometry fixed and clipped")
+                                            except:
+                                                feedback.pushInfo(f"Error in accessing {layer_title}")
+                                        if result is not None:
+                                            # feedback.pushInfo(f"result type {type(result)}")
+                                            # feedback.pushInfo(f"clip result count: {result.featureCount()}")
+                                            feature_layer_lst.append(result)
+                                            logging.debug(f"{layer_title} appended to feature_layer_lst")
+                                    else:
+                                        if has_table:
+                                            feedback.pushInfo(f"No data in table: BCGW {layer_table}")
+                                            logging.debug(f"{layer_title} contains no rows")
+                                        else:
+                                            feedback.pushInfo(f"Can not access: BCGW {layer_table}")
+                                            logging.debug(f"{layer_title} could not be accessed")
                                 elif (location is not None):
                                     if os.path.exists(location):
                                         logging.debug(f'{layer_title} exists, starting processing')
@@ -654,7 +661,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             # clean up
             QgsProject.instance().removeMapLayer(aoi.id())
             report_obj = None
-            oq_helper = None
+            del oq_helper
             logging.debug('Clean up complete')
             result_msg = {}
             result_msg[self.OUTPUT] = output
@@ -666,7 +673,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             for lyr_id in self.tool_map_layers:
                 QgsProject.instance().removeMapLayer(lyr_id)
             report_obj = None
-            oq_helper = None
+            del oq_helper
             raise QgsProcessingException(sys.exc_info())
             
 
@@ -919,6 +926,7 @@ class oracle_pyqgis:
     def open_db_connection(self):
         ''' open_db_connection creates and opens a db connection to the oracle database
         '''
+        logging.debug('Attempting db connection')
         driver ="QOCISPATIAL"
         conn_name = "bcgw_conn"
         if not QSqlDatabase.contains(conn_name):
@@ -929,11 +937,13 @@ class oracle_pyqgis:
         self.db.setUserName(self.user_name) 
         self.db.setPassword(self.user_pass) 
         db_open = self.db.open()
+        logging.debug(f'db connection status: {db_open}')
         return db_open
     def close_db_connection(self):
         ''' close_db_connection closes db connection to the oracle database
         '''
         if self.db.isOpen():
+            logging.debug(f'db connection closed')
             self.db.close()
         
     def create_layer_anyinteract(self,overlay_layer,layer_name,db_table,sql):
