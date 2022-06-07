@@ -98,6 +98,7 @@ class DissectAlg(QgsProcessingAlgorithm):
     USER = 'USER'
     PASSWORD = 'PASSWORD'
     OUTPUT = 'OUTPUT'
+    ADD_INTERESTS = 'ADD_INTERESTS'
           
     def config(self):
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
@@ -127,8 +128,6 @@ class DissectAlg(QgsProcessingAlgorithm):
         self.menu = self.tr(u'&ThabReport')
         self.protected_tables = self.get_protected_tables(self.SECURE_TABLES_CONFIG)
                
-        # TODO add checkbox for 'add interests to map'
-        self.add_interests = True
         self.tool_map_layers = []
         self.failed_layers =[]
 
@@ -269,6 +268,13 @@ class DissectAlg(QgsProcessingAlgorithm):
                 defaultValue = outfile
             )
         )
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.ADD_INTERESTS,
+                self.tr('Add overlapping interests to map'),
+                defaultValue = False
+            )
+        )
 
     def parse_config(self,xlsx):
         ''' parses xls into list of dictionaries 
@@ -313,6 +319,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         user = self.parameterAsString(parameters, 'USER', context)
         password = self.parameterAsString(parameters, 'PASSWORD', context)
         output_html = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
+        self.add_interests = self.parameterAsBoolean(parameters, 'ADD_INTERESTS', context)
         database = self.parameterAsString(parameters, 'DATABASE', context)
         # do these manually for now (not in dialogue)
         host = 'bcgw.bcgov'  
