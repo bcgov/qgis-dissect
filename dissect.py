@@ -36,6 +36,7 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFileDestination,
                        QgsProcessingParameterBoolean,
+                       QgsFeatureRequest,
                        QgsWkbTypes,
                        QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform,
@@ -91,7 +92,6 @@ class DissectAlg(QgsProcessingAlgorithm):
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
-    #INPUT = 'INPUT'
     AOI = 'AOI'
     XLS_CONFIG_IN = 'XLS_CONFIG_IN'
     DATABASE = 'DATABASE'
@@ -221,14 +221,15 @@ class DissectAlg(QgsProcessingAlgorithm):
             outfile = ''
         else:
             outfile = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+        
         self.addParameter(
-            QgsProcessingParameterVectorLayer(
+            QgsProcessingParameterFeatureSource(
                 self.AOI,
                 self.tr('Area of Interest'),
-                [QgsProcessing.TypeVectorPolygon]
+                types=[QgsProcessing.TypeVectorPolygon]
             )
+        )        
 
-        )
         self.addParameter(
             QgsProcessingParameterFile(
                 name = self.XLS_CONFIG_IN,
@@ -311,7 +312,9 @@ class DissectAlg(QgsProcessingAlgorithm):
         # Retrieve the feature source and sink. The 'dest_id' variable is used
         # to uniquely identify the feature sink, and must be included in the
         # dictionary returned by the processAlgorithm function.
-        aoi = self.parameterAsVectorLayer(parameters, 'AOI', context)
+        
+        aoiSource = self.parameterAsSource(parameters, 'AOI', context) # TODO do we need to use this for input w ParameterFeatureSource?
+        aoi = aoiSource.materialize(QgsFeatureRequest())
         config_xls = self.parameterAsFile(parameters, 'XLS_CONFIG_IN', context)
         user = self.parameterAsString(parameters, 'USER', context)
         password = self.parameterAsString(parameters, 'PASSWORD', context)
@@ -334,11 +337,16 @@ class DissectAlg(QgsProcessingAlgorithm):
         output = output_html
 
 
-        # TODO set up use selected feature
+        # TODO clean up
+        '''
+        I'm pretty sure if we take this route we can delete all the
+        references to use_selected as aoiSource either only takes the selected
+        features (or only passes on selected features during materialize()) 
+        '''
         use_selected = False
 
         try:
-            if aoi_in.selectedFeatureCount()>0 and use_selected == True:
+            if use_selected == True and aoi_in.selectedFeatureCount()>0:
                 #export to in memory layer
                 aoi = processing.run("native:saveselectedfeatures", {'INPUT': aoi_in, 'OUTPUT': 'memory:'})['OUTPUT']
             else:
