@@ -923,6 +923,7 @@ class oracle_pyqgis:
         # close db before destruction
         self.close_db_connection()
         self.db = None
+        qdb = None
 
     def open_db_connection(self):
         ''' open_db_connection creates and opens a db connection to the oracle database
@@ -930,10 +931,8 @@ class oracle_pyqgis:
         logging.debug('Attempting db connection')
         driver ="QOCISPATIAL"
         conn_name = "bcgw_conn"
-        if not QSqlDatabase.contains(conn_name):
-            self.db = QSqlDatabase.addDatabase(driver,conn_name)
-        else:
-            self.db = QSqlDatabase.database(conn_name)
+        qdb = QSqlDatabase()
+        self.db = qdb.addDatabase(driver,conn_name)
         self.db.setDatabaseName(self.host + "/" + self.database)
         self.db.setUserName(self.user_name) 
         self.db.setPassword(self.user_pass) 
