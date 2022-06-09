@@ -36,6 +36,7 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFileDestination,
                        QgsProcessingParameterAuthConfig,
+                       QgsProcessingParameterDefinition,
                        QgsWkbTypes,
                        QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform,
@@ -98,6 +99,8 @@ class DissectAlg(QgsProcessingAlgorithm):
     AOI = 'AOI'
     XLS_CONFIG_IN = 'XLS_CONFIG_IN'
     DATABASE = 'DATABASE'
+    HOST = 'HOST'
+    PORT = 'PORT'
     AUTH_CONFIG = 'AUTH_CONFIG'
     OUTPUT = 'OUTPUT'
           
@@ -207,6 +210,14 @@ class DissectAlg(QgsProcessingAlgorithm):
             db = ''
         else:
             db = os.environ['QENV_DB']
+        if 'QENV_HOST' not in os.environ:
+            host = ''
+        else:
+            host = os.environ['QENV_HOST']
+        if 'QENV_PORT' not in os.environ:
+            port = ''
+        else:
+            port = os.environ['QENV_PORT']
         if 'QENV_XLS_CONFIG' not in os.environ:
             xls_config = ''
         else:
@@ -223,23 +234,43 @@ class DissectAlg(QgsProcessingAlgorithm):
                 [QgsProcessing.TypeVectorPolygon]
             )
         )
-        self.addParameter(
-            QgsProcessingParameterFile(
-                name = self.XLS_CONFIG_IN,
-                description = self.tr('Input .xlsx coniguration file'),
-                optional = False,
-                extension = "xlsx",
-                defaultValue = xls_config
-            )
-        )
-        # would it be appropriate to take this as 'realm' from Auth DB?
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.DATABASE,
-                self.tr('Database'),
-                defaultValue = db
-            )
-        )
+        xl_param = QgsProcessingParameterFile(
+                    name = self.XLS_CONFIG_IN,
+                    description = self.tr('Input .xlsx coniguration file'),
+                    optional = False,
+                    extension = "xlsx",
+                    defaultValue = xls_config  
+                    )  
+        xl_param.setFlags(xl_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(xl_param)
+        
+        db_param = QgsProcessingParameterString(
+                    self.DATABASE,
+                    self.tr('Database'),
+                    defaultValue = db,
+                    optional = True
+                    )
+        db_param.setFlags(db_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(db_param)
+
+        host_param = QgsProcessingParameterString(
+                    self.HOST,
+                    self.tr('Host'),
+                    defaultValue = host,
+                    optional = True
+                    )
+        host_param.setFlags(host_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(host_param)
+
+        port_param = QgsProcessingParameterString(
+                    self.PORT,
+                    self.tr('Port'),
+                    defaultValue = port,
+                    optional = True
+                    )
+        port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(port_param)
+        
         self.addParameter(
             QgsProcessingParameterAuthConfig(
                 self.AUTH_CONFIG,
@@ -247,14 +278,15 @@ class DissectAlg(QgsProcessingAlgorithm):
                 optional = True
             )
         )
-        self.addParameter(
-            QgsProcessingParameterFileDestination(
-                self.OUTPUT,
-                self.tr('Output File eg. T:/myproject/myproject_overlap_report.html'),
-                'HTML files (*.html)',
-                defaultValue = outfile
-            )
-        )
+        
+        out_param = QgsProcessingParameterFileDestination(
+                    self.OUTPUT,
+                    self.tr('Report output file'),
+                    'HTML files (*.html)',
+                    defaultValue = outfile
+                    )
+        port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagIsModelOutput)
+        self.addParameter(out_param)
 
     def parse_config(self,xlsx):
         ''' parses xls into list of dictionaries 
@@ -298,6 +330,8 @@ class DissectAlg(QgsProcessingAlgorithm):
         output_html = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
         database = self.parameterAsString(parameters, 'DATABASE', context)
         # do these manually for now (not in dialogue)
+        host = self.parameterAsString(parameters, 'HOST', context)
+        port = self.parameterAsString(parameters, 'PORT', context)
         host = 'bcgw.bcgov'  
         port = '1521'
                
