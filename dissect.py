@@ -103,10 +103,11 @@ class DissectAlg(QgsProcessingAlgorithm):
           
     def config(self):
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
+        temppath = os.environ['TEMP']
 
         try:
             logging.basicConfig(
-            filename = os.path.join(self.CONFIG_PATH, 'logs', 'dissect.log'),
+            filename = os.path.join(temppath, 'dissect.log'),
             # filemode = 'w',
             encoding='utf-8',
             level=logging.DEBUG,
@@ -213,7 +214,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         if 'QENV_OUT' not in os.environ:
             outfile = ''
         else:
-            outfile = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+            outfile = os.environ['QENV_OUT']+'report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
         
         self.addParameter(
             QgsProcessingParameterVectorLayer(
@@ -893,8 +894,17 @@ class report:
         layers = layer_sort + non_intersecting_layers
         ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate)
         #ahtml = template.render(species=aoi.species, shape=aoi.poly,aoi=aoi)
+        outpath = os.path.dirname(outfile)
+        # Check whether the specified path exists or not
+        pathExist = os.path.exists(outpath)
+        logging.debug(f'Output path {outpath} exists: {pathExist}')
+        if not pathExist:      
+            # Create a new directory because it does not exist 
+            os.makedirs(outpath)
+            logging.debug('Outpath created')
         with open(outfile, 'w') as f:
             f.write(ahtml)    
+        logging.debug(f'Report written to file ({(os.path.getsize(outfile)/1000):.0f} KB)')
         #the last hurah!
         # arcpy.SetParameterAsText(1, outfile)
         return outfile
