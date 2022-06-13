@@ -35,6 +35,8 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterString,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFileDestination,
+                       QgsProcessingParameterAuthConfig,
+                       QgsProcessingParameterDefinition,
                        QgsProcessingParameterBoolean,
                        QgsFeatureRequest,
                        QgsWkbTypes,
@@ -47,7 +49,10 @@ from qgis.core import (QgsProcessing,
                        QgsDataSourceUri,
                        QgsProject,
                        QgsMessageLog,
-                       Qgis
+                       Qgis,
+                       QgsApplication,
+                       QgsAuthManager,
+                       QgsAuthMethodConfig
                        )
 
 from qgis import processing
@@ -95,17 +100,19 @@ class DissectAlg(QgsProcessingAlgorithm):
     AOI = 'AOI'
     XLS_CONFIG_IN = 'XLS_CONFIG_IN'
     DATABASE = 'DATABASE'
-    USER = 'USER'
-    PASSWORD = 'PASSWORD'
+    HOST = 'HOST'
+    PORT = 'PORT'
+    AUTH_CONFIG = 'AUTH_CONFIG'
     OUTPUT = 'OUTPUT'
     ADD_INTERESTS = 'ADD_INTERESTS'
           
     def config(self):
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
+        temppath = os.environ['TEMP']
 
         try:
             logging.basicConfig(
-            filename = os.path.join(self.CONFIG_PATH, 'logs', 'dissect.log'),
+            filename = os.path.join(temppath, 'dissect.log'),
             # filemode = 'w',
             encoding='utf-8',
             level=logging.DEBUG,
@@ -114,7 +121,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         except:
             feedback.pushInfo("Could not enable logging")
         
-        logging.debug('Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S"))
+        logging.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
 
         try:
             enable_remote_debugging(self)
@@ -198,29 +205,28 @@ class DissectAlg(QgsProcessingAlgorithm):
         """
         Here we define the inputs and output of the algorithm, along
         with some other properties.
-        """
-        # TODO add param for useSelected checkbox
-        if 'QENV_DB_USER' not in os.environ:
-            user = ''
-        else:
-            user = os.environ['QENV_DB_USER']
-        
+        """      
         if 'QENV_DB' not in os.environ:
             db = ''
         else:
             db = os.environ['QENV_DB']
+        if 'QENV_HOST' not in os.environ:
+            host = ''
+        else:
+            host = os.environ['QENV_HOST']
+        if 'QENV_PORT' not in os.environ:
+            port = ''
+        else:
+            port = os.environ['QENV_PORT']
         if 'QENV_XLS_CONFIG' not in os.environ:
             xls_config = ''
         else:
             xls_config = os.environ['QENV_XLS_CONFIG']
-        if 'QENV_DB_PASS' not in os.environ:
-            dbpass = ''
-        else:
-            dbpass = os.environ['QENV_DB_PASS']
         if 'QENV_OUT' not in os.environ:
             outfile = ''
         else:
-            outfile = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+            outfile = os.environ['QENV_OUT']+'report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+
         
         self.addParameter(
             QgsProcessingParameterFeatureSource(
@@ -228,46 +234,61 @@ class DissectAlg(QgsProcessingAlgorithm):
                 self.tr('Area of Interest'),
                 types=[QgsProcessing.TypeVectorPolygon]
             )
-        )        
+        )
+        xl_param = QgsProcessingParameterFile(
+                    name = self.XLS_CONFIG_IN,
+                    description = self.tr('Input .xlsx coniguration file'),
+                    optional = False,
+                    extension = "xlsx",
+                    defaultValue = xls_config  
+                    )  
+        xl_param.setFlags(xl_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(xl_param)
+        
+        db_param = QgsProcessingParameterString(
+                    self.DATABASE,
+                    self.tr('Database'),
+                    defaultValue = db,
+                    optional = True
+                    )
+        db_param.setFlags(db_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(db_param)
 
+        host_param = QgsProcessingParameterString(
+                    self.HOST,
+                    self.tr('Host'),
+                    defaultValue = host,
+                    optional = True
+                    )
+        host_param.setFlags(host_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(host_param)
+
+        port_param = QgsProcessingParameterString(
+                    self.PORT,
+                    self.tr('Port'),
+                    defaultValue = port,
+                    optional = True
+                    )
+        port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(port_param)
+        
         self.addParameter(
-            QgsProcessingParameterFile(
-                name = self.XLS_CONFIG_IN,
-                description = self.tr('Input .xlsx coniguration file'),
-                optional = False,
-                extension = "xlsx",
-                defaultValue = xls_config
+            QgsProcessingParameterAuthConfig(
+                self.AUTH_CONFIG,
+                self.tr('Database authentication'),
+                optional = True
             )
         )
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.DATABASE,
-                self.tr('Database'),
-                defaultValue = db
-            )
-        )
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.USER,
-                self.tr('DB Username'),
-                defaultValue = user
-            )
-        )
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.PASSWORD,
-                self.tr('DB Password'),
-                defaultValue = dbpass
-            )
-        )
-        self.addParameter(
-            QgsProcessingParameterFileDestination(
-                self.OUTPUT,
-                self.tr('Output File eg. T:/myproject/myproject_overlap_report.html'),
-                'HTML files (*.html)',
-                defaultValue = outfile
-            )
-        )
+
+        out_param = QgsProcessingParameterFileDestination(
+                    self.OUTPUT,
+                    self.tr('Report output file'),
+                    'HTML files (*.html)',
+                    defaultValue = outfile
+                    )
+        port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagIsModelOutput)
+        self.addParameter(out_param)
+
         self.addParameter(
             QgsProcessingParameterBoolean(
                 self.ADD_INTERESTS,
@@ -275,6 +296,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                 defaultValue = False
             )
         )
+
 
     def parse_config(self,xlsx):
         ''' parses xls into list of dictionaries 
@@ -316,15 +338,13 @@ class DissectAlg(QgsProcessingAlgorithm):
         aoiSource = self.parameterAsSource(parameters, 'AOI', context) # TODO do we need to use this for input w ParameterFeatureSource?
         aoi = aoiSource.materialize(QgsFeatureRequest())
         config_xls = self.parameterAsFile(parameters, 'XLS_CONFIG_IN', context)
-        user = self.parameterAsString(parameters, 'USER', context)
-        password = self.parameterAsString(parameters, 'PASSWORD', context)
+        auth_method_id = self.parameterAsString(parameters, 'AUTH_CONFIG', context)
         output_html = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
         self.add_interests = self.parameterAsBoolean(parameters, 'ADD_INTERESTS', context)
         database = self.parameterAsString(parameters, 'DATABASE', context)
-        # do these manually for now (not in dialogue)
-        host = 'bcgw.bcgov'  
-        port = '1521'
-               
+        host = self.parameterAsString(parameters, 'HOST', context)
+        port = self.parameterAsString(parameters, 'PORT', context)
+
         if feedback.isCanceled():
             feedback.pushInfo('Process cancelled by user.')
             return {}
@@ -335,7 +355,21 @@ class DissectAlg(QgsProcessingAlgorithm):
         aoi_in = aoi
         xls_file = config_xls
         output = output_html
-
+        
+        # get the application's authenticaion manager
+        auth_mgr = QgsApplication.authManager()
+        # create an empty authmethodconfig object
+        auth_cfg = QgsAuthMethodConfig()
+        # load config from manager to the new config instance and decrypt sensitive data
+        auth_mgr.loadAuthenticationConfig(auth_method_id, auth_cfg, True)
+        # get the configuration information (including username and password)
+        auth_info = auth_cfg.configMap()
+        try:
+            user = auth_info['username']
+            password = auth_info['password']
+        except:
+            user = ''
+            password = ''
 
         # TODO clean up
         '''
@@ -432,42 +466,49 @@ class DissectAlg(QgsProcessingAlgorithm):
                                     return {}
                                 aoi.select(item.id())
                                 if (location == 'BCGW'):
-                                    feedback.pushInfo('skipping BCGW layer - for now')
-                                    # assert layer_table is not None
-                                    # # get overlapping features
-                                    # has_table = oq_helper.has_table(layer_table)
-                                    # if has_table == True:
-                                    #     has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
-                                    # else:
-                                    #     has_spatial_rows = False
-                                    # if has_table == True and has_spatial_rows == True:
-                                    #     # get features from bbox
-                                    #     selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
-                                    #     try:
-                                    #         if selected_features.featureCount()>0:
-                                    #             # clip them
-                                    #             result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                    #             if result.featureCount()>0:
-                                    #                 feedback.pushInfo(f"{layer_title} with ({result.featureCount()}) overlapping features")
-                                    #         else:
-                                    #             # return layer with no features
-                                    #             result = selected_features
-                                    #     except:
-                                    #         try:
-                                    #             f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
-                                    #             result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                
-                                    #         except:
-                                    #             feedback.pushInfo(f"Error in accessing {layer_title}")
-                                    #     if result is not None:
-                                    #         # feedback.pushInfo(f"result type {type(result)}")
-                                    #         # feedback.pushInfo(f"clip result count: {result.featureCount()}")
-                                    #         feature_layer_lst.append(result)
-                                    # else:
-                                    #     if has_table:
-                                    #         feedback.pushInfo(f"No data in table: BCGW {layer_table}")
-                                    #     else:
-                                    #         feedback.pushInfo(f"Can not access: BCGW {layer_table}")
+                                    logging.debug(f'{layer_title} - is in BCGW')
+                                    assert layer_table is not None
+                                    # get overlapping features
+                                    has_table = oq_helper.has_table(layer_table)
+                                    if has_table == True:
+                                        has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
+                                    else:
+                                        has_spatial_rows = False
+                                    if has_table == True and has_spatial_rows == True:
+                                        logging.debug(f'{layer_title} - table and rows confirmed')
+                                        # get features from bbox
+                                        selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
+                                        try:
+                                            if selected_features.featureCount()>0:
+                                                # clip them
+                                                result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                if result.featureCount()>0:
+                                                    feedback.pushInfo(f"{layer_title} with ({result.featureCount()}) overlapping features")
+                                                    logging.debug(f"{layer_title} returned with ({result.featureCount()}) overlapping features")
+                                            else:
+                                                # return layer with no features
+                                                result = selected_features
+                                                logging.debug(f"{layer_title} returned no overlapping features")
+                                        except:
+                                            try:
+                                                logging.debug(f"{layer_title} fixing geometry")
+                                                f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
+                                                result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                logging.debug(f"{layer_title} geometry fixed and clipped")
+                                            except:
+                                                feedback.pushInfo(f"Error in accessing {layer_title}")
+                                        if result is not None:
+                                            # feedback.pushInfo(f"result type {type(result)}")
+                                            # feedback.pushInfo(f"clip result count: {result.featureCount()}")
+                                            feature_layer_lst.append(result)
+                                            logging.debug(f"{layer_title} appended to feature_layer_lst")
+                                    else:
+                                        if has_table:
+                                            feedback.pushInfo(f"No data in table: BCGW {layer_table}")
+                                            logging.debug(f"{layer_title} contains no rows")
+                                        else:
+                                            feedback.pushInfo(f"Can not access: BCGW {layer_table}")
+                                            logging.debug(f"{layer_title} could not be accessed")
                                 elif (location is not None):
                                     if os.path.exists(location):
                                         logging.debug(f'{layer_title} exists, starting processing')
@@ -670,7 +711,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             # clean up
             QgsProject.instance().removeMapLayer(aoi.id())
             report_obj = None
-            oq_helper = None
+            del oq_helper
             logging.debug('Clean up complete')
             result_msg = {}
             result_msg[self.OUTPUT] = output
@@ -682,7 +723,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             for lyr_id in self.tool_map_layers:
                 QgsProject.instance().removeMapLayer(lyr_id)
             report_obj = None
-            oq_helper = None
+            del oq_helper
             raise QgsProcessingException(sys.exc_info())
             
 
@@ -902,8 +943,17 @@ class report:
         layers = layer_sort + non_intersecting_layers
         ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate)
         #ahtml = template.render(species=aoi.species, shape=aoi.poly,aoi=aoi)
+        outpath = os.path.dirname(outfile)
+        # Check whether the specified path exists or not
+        pathExist = os.path.exists(outpath)
+        logging.debug(f'Output path {outpath} exists: {pathExist}')
+        if not pathExist:      
+            # Create a new directory because it does not exist 
+            os.makedirs(outpath)
+            logging.debug('Outpath created')
         with open(outfile, 'w') as f:
             f.write(ahtml)    
+        logging.debug(f'Report written to file ({(os.path.getsize(outfile)/1000):.0f} KB)')
         #the last hurah!
         # arcpy.SetParameterAsText(1, outfile)
         return outfile
@@ -931,27 +981,30 @@ class oracle_pyqgis:
     def __del__(self):
         # close db before destruction
         self.close_db_connection()
+        self.db = None
+        qdb = None
 
     def open_db_connection(self):
         ''' open_db_connection creates and opens a db connection to the oracle database
         '''
+        logging.debug('Attempting db connection')
         driver ="QOCISPATIAL"
         conn_name = "bcgw_conn"
-        if not QSqlDatabase.contains(conn_name):
-            self.db = QSqlDatabase.addDatabase(driver,conn_name)
-        else:
-            self.db = QSqlDatabase.database(conn_name)
+        qdb = QSqlDatabase()
+        self.db = qdb.addDatabase(driver,conn_name)
         self.db.setDatabaseName(self.host + "/" + self.database)
         self.db.setUserName(self.user_name) 
         self.db.setPassword(self.user_pass) 
         db_open = self.db.open()
+        logging.debug(f'db connection status: {db_open}')
         return db_open
     def close_db_connection(self):
         ''' close_db_connection closes db connection to the oracle database
         '''
         if self.db.isOpen():
             self.db.close()
-        
+            logging.debug(f'db connection closed')
+                
     def create_layer_anyinteract(self,overlay_layer,layer_name,db_table,sql):
         ''' creates a qgsvectorlayer using an anyinteract query
             overlay_layer: qgsvectorlayer, QgsFeature
