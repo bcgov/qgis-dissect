@@ -329,12 +329,9 @@ class DissectAlg(QgsProcessingAlgorithm):
         auth_method_id = self.parameterAsString(parameters, 'AUTH_CONFIG', context)
         output_html = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
         database = self.parameterAsString(parameters, 'DATABASE', context)
-        # do these manually for now (not in dialogue)
         host = self.parameterAsString(parameters, 'HOST', context)
         port = self.parameterAsString(parameters, 'PORT', context)
-        host = 'bcgw.bcgov'  
-        port = '1521'
-               
+
         if feedback.isCanceled():
             feedback.pushInfo('Process cancelled by user.')
             return {}
