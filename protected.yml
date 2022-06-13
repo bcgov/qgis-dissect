@@ -2,3 +2,4 @@
 protected_data:
   tables:
     - THIS_SCHEMA.THIS_TABLE
+    - ANOTHER_SCHEMA.ANOTHER_TABLE
