@@ -62,6 +62,7 @@ from PyQt5.QtWidgets import QAction, QMessageBox, QProgressBar,QDockWidget,QTabW
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
+
 # dev only
 import logging
 
@@ -104,6 +105,8 @@ class DissectAlg(QgsProcessingAlgorithm):
           
     def config(self):
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
+        if not os.path.exists(os.path.join(self.CONFIG_PATH, 'logs')):
+            os.mkdir(os.path.join(self.CONFIG_PATH, 'logs'))
 
         logging.basicConfig(
         filename = os.path.join(self.CONFIG_PATH, 'logs', 'dissect.log'),
@@ -136,9 +139,12 @@ class DissectAlg(QgsProcessingAlgorithm):
         self.clip_complete = False
         self.report = None
         self.html_file = None
-    def get_protected_tables(table,config_file):
+        
+        
+    def get_protected_tables(self,config_file):
         ''' Returns list of protected tables
         '''
+        logging.debug(f"Loading protected tables yml: {config_file}")
         with open(config_file, 'r') as file:
             conf = yaml.safe_load(file)['protected_data']
         return conf['tables']
@@ -291,7 +297,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             d = df.to_dict('records')
             data.append({worksheet:d})
         return data
-
+    
     def processAlgorithm(self, parameters, context, feedback):
         """
         Here is where the processing itself takes place.
@@ -339,22 +345,12 @@ class DissectAlg(QgsProcessingAlgorithm):
                 #export to in memory layer
                 aoi = processing.run("native:saveselectedfeatures", {'INPUT': aoi_in, 'OUTPUT': 'memory:'})['OUTPUT']
             else:
-                ## TODO set up warning for many featured input
-                # if aoi_in.featureCount()>20:
-                #     msg = QMessageBox()
-                #     msg.setText(f"Your area of interest ({aoi_in.name()}) contains many features")
-                #     msg.setInformativeText("would you like to push the limits?")
-                #     msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-                #     msg_rslt = msg.exec_()
-                #     if not msg_rslt == QMessageBox.Ok:
-                #         QgsMessageLog.logMessage("User initiated exit",self.PLUGIN_NAME,Qgis.Critical)
-                #         return False
                 aoi = aoi_in.clone()
             if aoi.sourceCrs().isGeographic:
                 parameter = {'INPUT': aoi, 'TARGET_CRS': 'EPSG:3005','OUTPUT': 'memory:aoi'}
                 aoi = processing.run('native:reprojectlayer', parameter)['OUTPUT']
             QgsProject.instance().addMapLayer(aoi,False)
-            
+            # TODO: remove addMapLayer above?
             # create db object 
             oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password)
 
@@ -362,7 +358,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             self.report = report(aoi,template_path=self.CONFIG_PATH,feedback=None)
 
             # connect trigger to method to run once all geoprocessing is done
-            QgsApplication.taskManager().allTasksFinished.connect(self.generate_report)
+            # QgsApplication.taskManager().allTasksFinished.connect(self.generate_report)
             # creates list of all fc to compare aoi too
             parsed_input = self.parse_config(xls_file)
             logging.debug('Config xlsx parsed successfully')
@@ -389,6 +385,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                         return {}
                     tab = tab_dict[key]
                     for dic in tab:
+                        # iterate over data definitions
                         if feedback.isCanceled():
                             feedback.pushInfo('Process cancelled by user.')
                             return {}
@@ -417,47 +414,75 @@ class DissectAlg(QgsProcessingAlgorithm):
                             #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
                             feedback.pushInfo('--- ' + str(layer_title) + ' ---')
                             features = aoi.getFeatures()
-                            task = clipVectorTask(aoi,key,location,layer_title,layer_sql,summary_fields,feedback,oq_helper,layer_table)
+                            logging.debug(f'Starting task for {layer_title}')
+                            task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oq_helper,layer_table)
+                            # task.run() # only do this if you want to bypass taskManager
+                            self.tasks.append(task)
                         else:
                             logging.error(f'----- No Title {layer_title}')
-            
-        # except Exception as e:
-        #     # clean up
-        #     QgsProject.instance().removeMapLayer(aoi.id())
-        #     for lyr_id in self.tool_map_layers:
-        #         QgsProject.instance().removeMapLayer(lyr_id)
-        #     report_obj = None
-        #     oq_helper = None
-        #     raise QgsProcessingException(sys.exc_info())
-            
-
-        '''
-        TODO remove
-        
-        stuff below here in processingAlgorithm class is from template and likely
-        must be deleted
-        '''
-   
+        except:
+            logging.error(f'Error in processAlgorithm')
+        for task in self.tasks:
+            QgsApplication.taskManager().addTask(task)
+            print (task.description())
+            # task.run()
+        while len(QgsApplication.taskManager().activeTasks())>0:
+            QCoreApplication.processEvents()
+        # if self.resultsComplete() is None:
+        #     logging.debug("a clip task was canceled or encountered errors")
+        #     return {}
+        #else:
+        result = self.generate_report()
+        result_msg = {}
+        result_msg[self.OUTPUT] = self.html_file
+        return result_msg
     def generate_report(self):
         # test new report
         for task in self.tasks:
-            if task.output is not None:
-                if task.output.featureCount()>0:
+            if task.OUTPUT is not None:
+                if task.OUTPUT.featureCount()>0:
                     if self.add_interests is True:
-                        QgsProject.instance().addMapLayer(task.output)
-                        self.tool_map_layers.append(task.output.id())
+                        QgsProject.instance().addMapLayer(task.OUTPUT)
+                        self.tool_map_layers.append(task.OUTPUT.id())
                 if task.layer_table not in self.protected_tables:
-                    self.report.add_interest(task.output,task.key,task.layer_subgroup,task.summary_fields,secure=False)
+                    self.report.add_interest(task.OUTPUT,task.key,task.layer_subgroup,task.summary_fields,secure=False)
                 else:
-                    self.report.add_interest(task.output,task.key,task.layer_subgroup,task.summary_fields,secure=True)
+                    self.report.add_interest(task.OUTPUT,task.key,task.layer_subgroup,task.summary_fields,secure=True)
         try:
-            result = self.report(self.html_file)
-            return {self.html_file}
+            self.report.report(self.html_file)
+            return self.html_file
+
         except:
+            logging.debug("generate_report encountered errors")
             return {}
+    def resultsComplete(self):
+        '''
+        Checks on task status 
+        Returns false if tasks are still pending 
+        Returns True when tasks are all complete
+        '''
+        for task in self.tasks:
+            if task.status() == QgsTask.Complete:
+                self.clip_complete = True
+            elif task.status() == QgsTask.Terminated:
+                self.clip_complete = False
+                return None
+            else:
+                self.clip_complete = False
+                return False
+        return True
+    
+
+        
+            
+
+                
 
 
-   
+
+
+
+            
 class report:
     ''' Class report includes parameters to track attributes of interests and
         methods to generate a report
@@ -602,12 +627,11 @@ class report:
         if layer.selectedFeatureCount()>0:
             options.onlySelectedFeatures = True
             # TODO use .writeAsVectorFormatV3
-            error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
+            error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            
         else:
-            error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON")
-        
+            error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            
         assert error[0] == 0, 'error not equal to 0'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
         # TODO get feedback working within report class
@@ -889,14 +913,17 @@ class oracle_pyqgis:
 class  clipVectorTask(QgsTask):
     """ This is a QgsTask that creates and clips a file based vector layer 
     based on a file location"""
-    def __init__(self,clip_feature,key,location,layer_title,layer_sql,summary_fields,feedback,oracle_helper_obj=None,layer_table=None):
+    def __init__(self,clip_feature,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oracle_helper_obj=None,layer_table=None):
         super().__init__(layer_title,QgsTask.CanCancel)
+        import ptvsd
+        ptvsd.debug_this_thread()
         self.aoi = clip_feature
         self.location = location
         self.layer_title = layer_title
         self.layer_sql = layer_sql
         self.oq_helper = oracle_helper_obj
         self.layer_table = layer_table
+        self.layer_subgroup = layer_subgroup
         self.summary_fields = summary_fields
         self.key = key
         self.output = None
@@ -908,6 +935,7 @@ class  clipVectorTask(QgsTask):
         logging.debug(f'{self.layer_title} exists, starting processing')
         features = self.aoi.getFeatures()
         results = []
+        result = None
         for item in features: # iterate through each item in aoi
             self.aoi.select(item.id())
             if self.location == 'BCGW':
@@ -915,15 +943,15 @@ class  clipVectorTask(QgsTask):
             elif os.path.exists(self.location):
                 results.append(self.process_file_vector())
             self.aoi.removeSelection()
-        if len(results)>0:
+        if len(results)>1:
             self.merge_results(results)
         elif len(results)==1:
             result = results[0]
-        if result is None:
-            return False
         else:
-            self.output = result
-            return True
+            return False
+    
+        self.OUTPUT = result
+        return True
     def process_file_vector(self):
         rlayer = None
         vlayer = None
