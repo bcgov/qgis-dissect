@@ -831,7 +831,12 @@ class report:
             value_merge = []
             for sf in summary_fields:
                 assert sf in fieldNames, f"summary field ({sf}) does not exist in layer({intersected_layer.name()})"
-                value_merge.append(str(f[sf]))
+                value = f[sf]
+                if isinstance(value, QDateTime): # convert QDateTime to formatted string
+                    value=value.toPyDateTime().date().isoformat()
+                else:
+                    value = str(value)
+                value_merge.append(value)
             if len(value_merge)>0:
                 value_string =" | ".join(value_merge)
                 field_string =" | ".join(summary_fields)
