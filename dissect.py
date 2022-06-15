@@ -23,7 +23,7 @@ from osgeo import (gdal,
                 ogr,
                 osr)
 
-from qgis.PyQt.QtCore import QCoreApplication
+from qgis.PyQt.QtCore import QCoreApplication,pyqtSignal
 from qgis.PyQt.QtSql import QSqlDatabase, QSqlQuery
 from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
@@ -61,7 +61,7 @@ import re
 from PyQt5.QtWidgets import QAction, QMessageBox, QProgressBar,QDockWidget,QTabWidget
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-
+from functools import partial
 
 # dev only
 import logging
@@ -134,9 +134,9 @@ class DissectAlg(QgsProcessingAlgorithm):
         self.add_interests = True
         self.tool_map_layers = []
         self.failed_layers =[]
-        self.clip_results =[]
+        self.taskManager = QgsApplication.taskManager()
         self.tasks = []
-        self.clip_complete = False
+        self.complete_tasks =[]
         self.report = None
         self.html_file = None
         
@@ -422,67 +422,34 @@ class DissectAlg(QgsProcessingAlgorithm):
                             logging.error(f'----- No Title {layer_title}')
         except:
             logging.error(f'Error in processAlgorithm')
+        logging.error(f'Loading {len(self.tasks)} tasks to .taskManager')
         for task in self.tasks:
-            QgsApplication.taskManager().addTask(task)
+            task.result.connect(lambda r: self.logTask(r))
+            self.taskManager.addTask(task)
             print (task.description())
-            # task.run()
-        while len(QgsApplication.taskManager().activeTasks())>0:
+            #task.run()
+        while len(self.taskManager.activeTasks())>0:
             QCoreApplication.processEvents()
-        # if self.resultsComplete() is None:
-        #     logging.debug("a clip task was canceled or encountered errors")
-        #     return {}
-        #else:
-        result = self.generate_report()
-        result_msg = {}
-        result_msg[self.OUTPUT] = self.html_file
-        return result_msg
-    def generate_report(self):
-        # test new report
-        for task in self.tasks:
-            if task.OUTPUT is not None:
-                if task.OUTPUT.featureCount()>0:
+
+        for task in self.complete_tasks:
+            logging.debug(f"task {task['layer_title']}")
+            if task['result'] is not None:
+                if task['result'].featureCount()>0:
                     if self.add_interests is True:
-                        QgsProject.instance().addMapLayer(task.OUTPUT)
-                        self.tool_map_layers.append(task.OUTPUT.id())
-                if task.layer_table not in self.protected_tables:
-                    self.report.add_interest(task.OUTPUT,task.key,task.layer_subgroup,task.summary_fields,secure=False)
+                        QgsProject.instance().addMapLayer(task['result'])
+                        self.tool_map_layers.append(task['result'].id())
+                if task['layer_table'] not in self.protected_tables:
+                    self.report.add_interest(task['result'],task['key'],task['layer_subgroup'],task['summary_fields'],secure=False)
                 else:
-                    self.report.add_interest(task.OUTPUT,task.key,task.layer_subgroup,task.summary_fields,secure=True)
-        try:
-            self.report.report(self.html_file)
-            return self.html_file
-
-        except:
-            logging.debug("generate_report encountered errors")
-            return {}
-    def resultsComplete(self):
-        '''
-        Checks on task status 
-        Returns false if tasks are still pending 
-        Returns True when tasks are all complete
-        '''
-        for task in self.tasks:
-            if task.status() == QgsTask.Complete:
-                self.clip_complete = True
-            elif task.status() == QgsTask.Terminated:
-                self.clip_complete = False
-                return None
+                    self.report.add_interest(task['result'],task['key'],task['layer_subgroup'],task['summary_fields'],secure=True)
             else:
-                self.clip_complete = False
-                return False
-        return True
-    
-
-        
-            
-
-                
-
-
-
-
-
-            
+                logging.debug(f"task {task['layer_title']} did not generate output")
+        result_msg = {}
+        self.report.report(self.html_file)
+        result_msg[self.OUTPUT] = self.html_file
+        return result_msg 
+    def logTask(self,task_results):
+        self.complete_tasks.append(task_results)
 class report:
     ''' Class report includes parameters to track attributes of interests and
         methods to generate a report
@@ -913,6 +880,7 @@ class oracle_pyqgis:
 class  clipVectorTask(QgsTask):
     """ This is a QgsTask that creates and clips a file based vector layer 
     based on a file location"""
+    result = pyqtSignal(dict)
     def __init__(self,clip_feature,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oracle_helper_obj=None,layer_table=None):
         super().__init__(layer_title,QgsTask.CanCancel)
         import ptvsd
@@ -1024,18 +992,20 @@ class  clipVectorTask(QgsTask):
                 if selected_features.featureCount()>0:
                     # clip them
                     result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(self.aoi.id(), True), 'OUTPUT':f'memory:{self.layer_title}'})['OUTPUT']
-                    if result.featureCount()>0:
-                        self.feedback.pushInfo(f"{self.layer_title} with ({result.featureCount()}) overlapping features")
+                    logging.debug(f"Clip of {self.layer_title} has {result.featureCount()} features")
                 else:
                     # return layer with no features
+                    logging.debug(f'Oracle {self.layer_title} has no feature in AOI')
                     result = selected_features
             except:
                 try:
+                    logging.debug(f"Clip of {self.layer_title} failed attempt to repair geometry")
                     f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
                     result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(self.aoi.id(), True), 'OUTPUT':f'memory:{self.layer_title}'})['OUTPUT']
+                    logging.debug(f"Clip of fixed {self.layer_title} has {result.featureCount()} features")
                     
                 except:
-                    self.feedback.pushInfo(f"Error in accessing {self.layer_title}")
+                    logging.debug(f"Error in accessing {self.layer_title}")
         return result
 
     def merge_results(self,vector_layers):
@@ -1062,10 +1032,27 @@ class  clipVectorTask(QgsTask):
             QgsMessageLog.logMessage(
                 f'Clip file vectorlayer {self.description()} completed',
                 MESSAGE_CATEGORY, Qgis.Success)
+            # self.location = location
+            # self.layer_title = layer_title
+            # self.layer_sql = layer_sql
+            # self.oq_helper = oracle_helper_obj
+            # self.layer_table = layer_table
+            # self.layer_subgroup = layer_subgroup
+            # self.summary_fields = summary_fields
+            # self.key = key
+            self.result.emit({"location":self.location,
+                            "layer_title":self.layer_title,
+                            "layer_sql":self.layer_sql,
+                            "layer_table":self.layer_table,
+                            "layer_subgroup":self.layer_subgroup,
+                            "summary_fields":self.summary_fields,
+                            "key":self.key,
+                            "result":self.OUTPUT})
         else:
             QgsMessageLog.logMessage(
                     f'Clip file vectorlayer {self.description()} Exception: {self.exception}',
                     MESSAGE_CATEGORY, Qgis.Critical)
+            raise self.exception # this can be populated in task with eg. self.exception = Exception("Layer failed to merge")
     def cancel(self):
         QgsMessageLog.logMessage(
             'Clip file vectorlayer {self.description} was cancelled',
