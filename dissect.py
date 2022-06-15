@@ -77,7 +77,8 @@ def enable_remote_debugging(self):
             QgsMessageLog.logMessage("Remote Debug for Visual Studio is already active", MESSAGE_CATEGORY, Qgis.Info)
             logging.debug('Remote Debug for Visual Studio already attached')
             return
-        ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, 'ptvsd_log'))
+        # ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, 'ptvsd_log'))
+        ptvsd.enable_attach(address=('localhost', 5678))
         QgsMessageLog.logMessage("Attached remote Debug for Visual Studio", MESSAGE_CATEGORY, Qgis.Info)
         logging.debug('Attached remote Debug for Visual Studio')
 
@@ -496,6 +497,8 @@ class DissectAlg(QgsProcessingAlgorithm):
                                                 result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
                                                 logging.debug(f"{layer_title} geometry fixed and clipped")
                                             except:
+                                                self.failed_layers.append(layer_title)
+                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='BCGW - data/geometry issue')
                                                 feedback.pushInfo(f"Error in accessing {layer_title}")
                                         if result is not None:
                                             # feedback.pushInfo(f"result type {type(result)}")
@@ -505,9 +508,13 @@ class DissectAlg(QgsProcessingAlgorithm):
                                     else:
                                         if has_table:
                                             feedback.pushInfo(f"No data in table: BCGW {layer_table}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='No data in table: BCGW')
                                             logging.debug(f"{layer_title} contains no rows")
                                         else:
                                             feedback.pushInfo(f"Can not access: BCGW {layer_table}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not access on BCGW')
                                             logging.debug(f"{layer_title} could not be accessed")
                                 elif (location is not None):
                                     if os.path.exists(location):
@@ -652,6 +659,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                                         # os.path.exists(location) == False
                                         feedback.pushInfo(f"Can not make valid: {location}")
                                         self.failed_layers.append(layer_title)
+                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path')
 
                                 aoi.removeSelection()
 
@@ -702,8 +710,10 @@ class DissectAlg(QgsProcessingAlgorithm):
                                 # p = progress.value()
                                 # progress.setValue(p+i)
                             except:
-                                feedback.pushInfo(f"Failed to add interest {layer_title}")
-                                logging.error(f'{layer_title}: failed to add')
+                                feedback.pushInfo(f"Failed to add {layer_title} to map/report")
+                                logging.error(f'{layer_title}: failed to add to map/report')
+                            finally:
+                                result = None
 
             # write report
             result = report_obj.report(output)
@@ -713,6 +723,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             report_obj = None
             del oq_helper
             logging.debug('Clean up complete')
+            feedback.pushInfo(f"Failed layers: {self.failed_layers}")
             result_msg = {}
             result_msg[self.OUTPUT] = output
             return result_msg
@@ -768,6 +779,7 @@ class report:
         self.interests = []
         self.aoi = self.aoi_info(aoi)
         self.aoi_layer = aoi # TODO remove? never used?
+        self.failedLyrs = []
         
     def aoi_info(self,aoi):
         '''prepars key:value dict with keys name,area,geojson
@@ -801,7 +813,6 @@ class report:
             parameters: interested_layer
         '''
         
-        # self.fb.pushInfo(f"REPORT add interest: {intersected_layer.name()}({intersected_layer.featureCount()})")
         interest = {'name':intersected_layer.name(),
             'group':group,
             'subgroup':subgroup}
@@ -921,12 +932,23 @@ class report:
         logging.debug('V2GEOJSON: json loaded')
         return geojson
 
-    
     def load_geojson(self,file):
         ''' loads a json file to string '''
         with open(file) as f:
             data = json.load(f)
         return json.dumps(data)
+
+    def add_failed(self, layer_title, subgroup, group, comment=None):
+        ''' add a failed interest to the report'''
+        logging.debug(f"REPORT add failed layer: {layer_title}")
+        failedLyr = {'name':layer_title,
+            'group':group,
+            'subgroup':subgroup,
+            'comment':comment}   
+
+        self.failedLyrs.append(failedLyr)
+        logging.debug('Interest appended to failed layers')
+
     def report(self,outfile):
         """ Build html report based on self.interests --> html file
         """
@@ -935,7 +957,7 @@ class report:
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(
             searchpath=os.path.join(self.template_path,self.TEMPLATE_RELATIVE_PATH))
             )
-        template = env.get_template('home.html')
+        template = env.get_template('home.html', parent='layout.html')
         intersecting_layers = []
         non_intersecting_layers=[]
         for i in self.interests:
@@ -946,7 +968,7 @@ class report:
         layers = [i for i in self.interests]
         layer_sort = sorted(intersecting_layers, key=lambda k: k['value'],reverse=True) 
         layers = layer_sort + non_intersecting_layers
-        ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate)
+        ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate, failedLyrs = self.failedLyrs)
         #ahtml = template.render(species=aoi.species, shape=aoi.poly,aoi=aoi)
         outpath = os.path.dirname(outfile)
         # Check whether the specified path exists or not
@@ -961,6 +983,8 @@ class report:
         logging.debug(f'Report written to file ({(os.path.getsize(outfile)/1000):.0f} KB)')
         #the last hurah!
         # arcpy.SetParameterAsText(1, outfile)
+        env = None
+        template = None
         return outfile
 
 class oracle_pyqgis:
