@@ -11,7 +11,6 @@
 ***************************************************************************
 """
 
-from cgitb import reset
 import sys
 import os
 import traceback
@@ -23,7 +22,7 @@ from osgeo import (gdal,
                 ogr,
                 osr)
 
-from qgis.PyQt.QtCore import QCoreApplication,pyqtSignal
+from qgis.PyQt.QtCore import QCoreApplication
 from qgis.PyQt.QtSql import QSqlDatabase, QSqlQuery
 from qgis.core import (QgsProcessing,
                        QgsFeatureSink,
@@ -44,8 +43,6 @@ from qgis.core import (QgsProcessing,
                        QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform,
                        QgsCoordinateTransformContext,
-                       QgsApplication,
-                       QgsFeature,
                        QgsVectorLayer,
                        QgsRasterLayer,
                        QgsVectorFileWriter,
@@ -55,8 +52,7 @@ from qgis.core import (QgsProcessing,
                        Qgis,
                        QgsApplication,
                        QgsAuthManager,
-                       QgsAuthMethodConfig,
-                       QgsTask
+                       QgsAuthMethodConfig
                        )
 
 from qgis import processing
@@ -68,7 +64,6 @@ import re
 from PyQt5.QtWidgets import QAction, QMessageBox, QProgressBar,QDockWidget,QTabWidget
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-from functools import partial
 
 # dev only
 import logging
@@ -114,9 +109,7 @@ class DissectAlg(QgsProcessingAlgorithm):
           
     def config(self):
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
-
         temppath = os.environ['TEMP']
-
 
         try:
             logging.basicConfig(
@@ -145,17 +138,10 @@ class DissectAlg(QgsProcessingAlgorithm):
                
         self.tool_map_layers = []
         self.failed_layers =[]
-        self.taskManager = QgsApplication.taskManager()
-        self.tasks = []
-        self.complete_tasks =[]
-        self.report = None
-        self.html_file = None
-        
-        
-    def get_protected_tables(self,config_file):
+
+    def get_protected_tables(table,config_file):
         ''' Returns list of protected tables
         '''
-        logging.debug(f"Loading protected tables yml: {config_file}")
         with open(config_file, 'r') as file:
             conf = yaml.safe_load(file)['protected_data']
         return conf['tables']
@@ -186,9 +172,9 @@ class DissectAlg(QgsProcessingAlgorithm):
         """
         return self.tr('dissect')
 
-        '''
-        optional script group
-        '''
+    '''
+    optional script group
+    '''
     # def group(self):
     #     """
     #     Returns the name of the group this algorithm belongs to. This string
@@ -331,7 +317,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             d = df.to_dict('records')
             data.append({worksheet:d})
         return data
-    
+
     def processAlgorithm(self, parameters, context, feedback):
         """
         Here is where the processing itself takes place.
@@ -369,7 +355,6 @@ class DissectAlg(QgsProcessingAlgorithm):
 
         aoi_in = aoi
         xls_file = config_xls
-
         output = output_html
         
         # get the application's authenticaion manager
@@ -387,8 +372,6 @@ class DissectAlg(QgsProcessingAlgorithm):
             user = ''
             password = ''
 
-        self.html_file = output_html
-
         # TODO clean up
         '''
         I'm pretty sure if we take this route we can delete all the
@@ -402,20 +385,28 @@ class DissectAlg(QgsProcessingAlgorithm):
                 #export to in memory layer
                 aoi = processing.run("native:saveselectedfeatures", {'INPUT': aoi_in, 'OUTPUT': 'memory:'})['OUTPUT']
             else:
+                ## TODO set up warning for many featured input
+                # if aoi_in.featureCount()>20:
+                #     msg = QMessageBox()
+                #     msg.setText(f"Your area of interest ({aoi_in.name()}) contains many features")
+                #     msg.setInformativeText("would you like to push the limits?")
+                #     msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+                #     msg_rslt = msg.exec_()
+                #     if not msg_rslt == QMessageBox.Ok:
+                #         QgsMessageLog.logMessage("User initiated exit",self.PLUGIN_NAME,Qgis.Critical)
+                #         return False
                 aoi = aoi_in.clone()
             if aoi.sourceCrs().isGeographic:
                 parameter = {'INPUT': aoi, 'TARGET_CRS': 'EPSG:3005','OUTPUT': 'memory:aoi'}
                 aoi = processing.run('native:reprojectlayer', parameter)['OUTPUT']
             QgsProject.instance().addMapLayer(aoi,False)
-            # TODO: remove addMapLayer above?
+            
             # create db object 
             oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password)
 
             # init report with AOI
-            self.report = report(aoi,template_path=self.CONFIG_PATH,feedback=None)
+            report_obj = report(aoi,template_path=self.CONFIG_PATH,feedback=None)
 
-            # connect trigger to method to run once all geoprocessing is done
-            # QgsApplication.taskManager().allTasksFinished.connect(self.generate_report)
             # creates list of all fc to compare aoi too
             parsed_input = self.parse_config(xls_file)
             logging.debug(f'Config xlsx parsed successfully ({xls_file})')
@@ -444,9 +435,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                         return {}
                     tab = tab_dict[key]
                     for dic in tab:
-
                         logging.debug(f'Processing dic: {dic}')
-
                         if feedback.isCanceled():
                             feedback.pushInfo('Process cancelled by user.')
                             return {}
@@ -466,55 +455,304 @@ class DissectAlg(QgsProcessingAlgorithm):
                             if layer_sql is None:
                                 layer_sql = ''
                             layer_expansion = dic['Attribute ID']
+                            feature_layer_lst = [] # build empty layer list for each obj to be merged at end of unique feature cycle
+                            #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
+                            feedback.pushInfo('--- ' + str(layer_title) + ' ---')
+                            logging.debug(f'{layer_title} location: {location}')
+                            features = aoi.getFeatures()
+                            for item in features: # iterate through each item in aoi
+                                logging.debug(f'{layer_title} - feature item {item}')
+                                if feedback.isCanceled():
+                                    feedback.pushInfo('Process cancelled by user.')
+                                    return {}
+                                aoi.select(item.id())
+                                if (location == 'BCGW'):
+                                    logging.debug(f'{layer_title} - is in BCGW')
+                                    assert layer_table is not None
+                                    # get overlapping features
+                                    has_table = oq_helper.has_table(layer_table)
+                                    if has_table == True:
+                                        has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
+                                    else:
+                                        has_spatial_rows = False
+                                    if has_table == True and has_spatial_rows == True:
+                                        logging.debug(f'{layer_title} - table and rows confirmed')
+                                        # get features from bbox
+                                        selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
+                                        try:
+                                            if selected_features.featureCount()>0:
+                                                # clip them
+                                                result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                if result.featureCount()>0:
+                                                    feedback.pushInfo(f"{layer_title} with ({result.featureCount()}) overlapping features")
+                                                    logging.debug(f"{layer_title} returned with ({result.featureCount()}) overlapping features")
+                                            else:
+                                                # return layer with no features
+                                                result = selected_features
+                                                logging.debug(f"{layer_title} returned no overlapping features")
+                                        except:
+                                            try:
+                                                logging.debug(f"{layer_title} fixing geometry")
+                                                f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
+                                                result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                logging.debug(f"{layer_title} geometry fixed and clipped")
+                                            except:
+                                                self.failed_layers.append(layer_title)
+                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='BCGW - data/geometry issue')
+                                                feedback.pushInfo(f"Error in accessing {layer_title}")
+                                        if result is not None:
+                                            # feedback.pushInfo(f"result type {type(result)}")
+                                            # feedback.pushInfo(f"clip result count: {result.featureCount()}")
+                                            feature_layer_lst.append(result)
+                                            logging.debug(f"{layer_title} appended to feature_layer_lst")
+                                    else:
+                                        if has_table:
+                                            feedback.pushInfo(f"No data in table: BCGW {layer_table}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='No data in table: BCGW')
+                                            logging.debug(f"{layer_title} contains no rows")
+                                        else:
+                                            feedback.pushInfo(f"Can not access: BCGW {layer_table}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not access on BCGW')
+                                            logging.debug(f"{layer_title} could not be accessed")
+                                elif (location is not None):
+                                    if os.path.exists(location):
+                                        logging.debug(f'{layer_title} exists, starting processing')
+                                        rlayer = None
+                                        vlayer = None
+                                        filename, file_extension = os.path.splitext(location)
+                                        if len(layer_sql)>0:
+                                            location_sql = f"|subset={layer_sql}"
+                                        else:
+                                            location_sql = ""
+                                        coverage = False
+                                        if os.path.isdir(location):
+                                            dir_files = os.listdir(location)
+                                            for f in dir_files:
+                                                if ".adf" in f:
+                                                    coverage = True
+                                                    break
+                                        if coverage is True:
+                                            # load coverage
+                                            for f in os.listdir(location):
+                                                if f in ['arc.adf','pal.adf','lab.adf','cnt.adf']:
+                                                    vlayer = QgsVectorLayer(os.path.join(location,f), layer_title, "ogr")
+                                                if f == 'hdr.adf':
+                                                    rlayer = QgsRasterLayer(os.path.join(location,f),layer_title)
+                                        elif file_extension in ['.shp','.kml','.kmz','.geojson']:
+                                            file_location = location + location_sql
+                                            vlayer = QgsVectorLayer(file_location, layer_title, "ogr")
+                                            assert vlayer.isValid(),f"Failed to add {layer_title}:{filename}"
+                                        elif file_extension in ['.tif']:
+                                            rlayer = QgsRasterLayer(location,layer_title)
+                                            assert rlayer.isValid(),f"Failed to add {layer_title}:{filename}"
+                                        elif file_extension in ['.gdb','gpkg']:
+                                            ogr_string = f"{location}|layername={layer_table}{location_sql}"
+                                            vlayer = QgsVectorLayer(ogr_string, layer_title, "ogr")
+                                        else:
+                                            feedback.pushInfo(f"No loading function for {layer_title}: {location}")
+                                        if vlayer is not None:
+                                            logging.debug(f'{layer_title} is vector layer, starting processing')
+                                            try:
+                                                if vlayer.isValid():
+                                                    vlayer.setSubsetString(layer_sql)
+                                                    if vlayer.featureCount()>0:
+                                                        logging.debug(f'{layer_title} has valid geometry')
+                                                        result = processing.run("native:clip", {'INPUT':vlayer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                        logging.debug(f'{layer_title} clipped')
+                                                    else:
+                                                        feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
+                                                else:
+                                                    feedback.pushInfo(f"Vector layer invalid {layer_title}: {location} | {layer_table}({location_sql})")
+                                            except:
+                                                vlayer.setSubsetString(layer_sql)
+                                                if vlayer.featureCount()>0:
+                                                    logging.debug(f'{layer_title} has invalid geometry, fixing...')
+                                                    f_layer = processing.run("native:fixgeometries", {'INPUT':vlayer,'OUTPUT':'memory:{layer_title}fix'})['OUTPUT']
+                                                    logging.debug(f'{layer_title} geo fixed')
+                                                    result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                    logging.debug(f'{layer_title} clipped')
+                                                else:
+                                                    feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
+                                            finally:
+                                                if result is not None:
+                                                    feature_layer_lst.append(result)
+                                                    logging.debug(f'{layer_title} added to feature_layer_lst')
+                                                    feedback.pushInfo(f"{layer_title}: {result.featureCount()} overlapping features found")
+                                        elif rlayer is not None:
+                                            enable_raster = False
+                                            # work below for feature to report on raster layers. This is disabled and
+                                            # TODO: build raster classification algorithm
+                                            if enable_raster is False:
+                                                print ("Raster processing is not yet supported/enabled")
+                                            if enable_raster:
+                                                print ("Starting Raster process")
+                                                # clp_raster = processing.run("gdal:cliprasterbymasklayer", 
+                                                #     {'INPUT':rlayer,
+                                                #     'MASK':QgsProcessingFeatureSourceDefinition(aoi.id(), True),
+                                                #     'SOURCE_CRS':QgsCoordinateReferenceSystem('EPSG:3005'),
+                                                #     'TARGET_CRS':QgsCoordinateReferenceSystem('EPSG:3005'),
+                                                #     'NODATA':None,
+                                                #     'ALPHA_BAND':False,
+                                                #     'CROP_TO_CUTLINE':True,
+                                                #     'KEEP_RESOLUTION':False,
+                                                #     'SET_RESOLUTION':False,
+                                                #     'X_RESOLUTION':None,'Y_RESOLUTION':None,
+                                                #     'MULTITHREADING':False,
+                                                #     'OPTIONS':'',
+                                                #     'DATA_TYPE':0,
+                                                #     'EXTRA':'',
+                                                #     'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
+                                                clp_raster = self.gdal_raster_clip(rlayer,aoi)
+                                                dbf = location + ".vat.dbf"
+                                                vlookup = {}
+                                                if os.path.exists(dbf):
+                                                    dbfdriver = ogr.GetDriverByName("ESRI Shapefile")
+                                                    dbfdatasource = dbfdriver.Open(dbf,0)
+                                                    dbflayer = dbfdatasource.GetLayer()
+                                                    dbflayer_def = dbflayer.GetLayerDefn()
+                                                    fields = [dbflayer_def.GetFieldDefn(i).GetName() for i in range(dbflayer_def.GetFieldCount())]
+                                                    assert value_field in fields
+                                                    for f in dbflayer:
+                                                        vlookup[f.GetField('VALUE')]= f.GetField(value_field)
+                                                # This gdal:polygonize seems to be an issue in QGIS <= 3.22 hopefully fixed at a later date
+                                                # vector = processing.run("gdal:polygonize", 
+                                                #     {'INPUT':clp_raster,'BAND':1,'FIELD':'DN','EIGHT_CONNECTEDNESS':False,
+                                                #     'EXTRA':'','OUTPUT':'TEMPORARY_OUTPUT'})
+                                                # Work around below uses gdal directly
+                                                shp = self.gdal_polygonize(clp_raster)
+                                                shp_vlayer = QgsVectorLayer(shp, layer_title, "ogr")
+                                                # end workaround
+                                                if len(vlookup)>0:
+                                                    field_length = len(max(vlookup.values()))
+                                                    vector = processing.run("native:addfieldtoattributestable", 
+                                                        {'INPUT':shp_vlayer,
+                                                        'FIELD_NAME':value_field,
+                                                        'FIELD_TYPE':2,
+                                                        'FIELD_LENGTH':field_length,
+                                                        'FIELD_PRECISION':0,
+                                                        'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
+                                                    findex = vector.fields().indexFromName(value_field)
+                                                    assert findex != -1
+                                                    for feat in vector.getFeatures():
+                                                        vector.changeAttributeValue(feat.id(),findex,vlookup[feat['DN']])
+                                                    vector.commitChanges()
+                                                else:
+                                                    value_field = 'DN'
+                                                    vector = shp_vlayer
+                                                if (re.search(r'\bValue\b', layer_sql) or re.search(r'\bValue\b', layer_sql)):
+                                                    layer_sql = layer_sql.replace("VALUE ","DN").replace("Value ","DN")
+                                                if len(layer_sql)>0:
+                                                    vector.setSubsetString(layer_sql)
+                                                if vector.featureCount()>0:
+                                                    result = vector
+                                                else:
+                                                    result = None
+                                                # end raster processing
+                                                # QgsMessageLog.logMessage("No raster summary function",self.PLUGIN_NAME,Qgis.Warning)
 
+                                            if result is not None:
+                                                feature_layer_lst.append(result)
+                                                
+                                    else:
+                                        # os.path.exists(location) == False
+                                        feedback.pushInfo(f"Can not make valid: {location}")
+                                        self.failed_layers.append(layer_title)
+                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path')
+
+                                aoi.removeSelection()
+
+                            # TODO understand this - it is only for BCGW? (or raster) why?
+                            if len(feature_layer_lst) > 0:
+                                logging.debug(f'{layer_title} Merging feature_layer_lst, length: {len(feature_layer_lst)}')
+                                try:
+                                    if len(feature_layer_lst)>1:
+                                        result = processing.run("native:mergevectorlayers", {'LAYERS':feature_layer_lst, 'CRS':QgsCoordinateReferenceSystem('EPSG:3005'),'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                        result.setCrs(QgsCoordinateReferenceSystem('EPSG:3005'),True)
+                                    else:
+                                        result = feature_layer_lst[0]
+                                    if result.crs().authid() != 'EPSG:3005':
+                                        result = processing.run('native:reprojectlayer', {'INPUT': result, 'TARGET_CRS': 'EPSG:3005', 'OUTPUT': f'memory:{layer_title}'})['OUTPUT']
+                                    idx = result.fields().indexFromName( 'SE_ANNO_CAD_DATA' )
+                                    if idx != (-1):
+                                        res = result.dataProvider().deleteAttributes([idx])
+                                        result.updateFields()
+                                except:
+                                    feedback.pushInfo(f"Could not merge results for {layer_title}")
+                            
+                            # test new report
                             if (layer_expansion is None):
                                 layer_expansion = ''
                             if len(layer_expansion)>0:
+                                # summary_fields = layer_expansion.split(',')
                                 summary_fields = [f.strip() for f in layer_expansion.split(',')]
                             else:
                                 summary_fields = []
+                            try:
+                                delta_time = round(time.time()-lyr_start,1)
+                                feedback.pushInfo(f"{layer_title}: {delta_time} seconds")
+                                logging.debug(f'{layer_title}: {delta_time} seconds to process')
+                                if result is not None:      
+                                    if result.featureCount()>0:
+                                        if self.add_interests is True:
+                                            logging.debug(f'{layer_title}: adding to map')
+                                            QgsProject.instance().addMapLayer(result)
+                                            self.tool_map_layers.append(result.id())
+                                            logging.debug(f'{layer_title}: added to map')
+                                    if layer_table not in self.protected_tables:
+                                        report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=False)
+                                        logging.debug(f'{layer_title}: added to report (non-secure)')
+                                    else:
+                                        report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=True)
+                                        logging.debug(f'{layer_title}: added to report (secure)')
+                                ## TODO progress bar
+                                # p = progress.value()
+                                # progress.setValue(p+i)
+                            except:
+                                feedback.pushInfo(f"Failed to add {layer_title} to map/report")
+                                logging.error(f'{layer_title}: failed to add to map/report')
+                            finally:
+                                result = None
 
+            # write report
+            result = report_obj.report(output)
+            logging.debug('Report produced')
+            # clean up
+            QgsProject.instance().removeMapLayer(aoi.id())
+            report_obj = None
+            del oq_helper
+            logging.debug('Clean up complete')
+            feedback.pushInfo(f"Failed layers: {self.failed_layers}")
+            result_msg = {}
+            result_msg[self.OUTPUT] = output
+            return result_msg
 
-                            #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
-                            feedback.pushInfo('--- ' + str(layer_title) + ' ---')
-                            features = aoi.getFeatures()
-                            logging.debug(f'Starting task for {layer_title}')
-                            task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oq_helper,layer_table)
-                            # task.run() # only do this if you want to bypass taskManager
-                            self.tasks.append(task)
-                        else:
-                            logging.error(f'----- No Title {layer_title}')
-        except:
-            logging.error(f'Error in processAlgorithm')
-        logging.error(f'Loading {len(self.tasks)} tasks to .taskManager')
-        for task in self.tasks:
-            task.result.connect(lambda r: self.logTask(r))
-            self.taskManager.addTask(task)
-            print (task.description())
-            #task.run()
-        while len(self.taskManager.activeTasks())>0:
-            QCoreApplication.processEvents()
+        except Exception as e:
+            # clean up
+            QgsProject.instance().removeMapLayer(aoi.id())
+            for lyr_id in self.tool_map_layers:
+                QgsProject.instance().removeMapLayer(lyr_id)
+            report_obj = None
+            del oq_helper
+            raise QgsProcessingException(sys.exc_info())
+            
 
+        '''
+        TODO remove
+        
+        stuff below here in processingAlgorithm class is from template and likely
+        must be deleted
+        '''
+       
+        # # Compute the number of steps to display within the progress bar and
+        # # get features from source
+        # total = 100.0 / aoi.featureCount() if aoi.featureCount() else 0
+        # features = aoi.getFeatures()
 
-        for task in self.complete_tasks:
-            logging.debug(f"task {task['layer_title']}")
-            if task['result'] is not None:
-                if task['result'].featureCount()>0:
-                    if self.add_interests is True:
-                        QgsProject.instance().addMapLayer(task['result'])
-                        self.tool_map_layers.append(task['result'].id())
-                if task['layer_table'] not in self.protected_tables:
-                    self.report.add_interest(task['result'],task['key'],task['layer_subgroup'],task['summary_fields'],secure=False)
-                else:
-                    self.report.add_interest(task['result'],task['key'],task['layer_subgroup'],task['summary_fields'],secure=True)
-            else:
-                logging.debug(f"task {task['layer_title']} did not generate output")
-        result_msg = {}
-        self.report.report(self.html_file)
-        result_msg[self.OUTPUT] = self.html_file
-        return result_msg 
-    def logTask(self,task_results):
-        self.complete_tasks.append(task_results)
+        #     # Update the progress bar
+        #     feedback.setProgress(int(current * total))
+   
 class report:
     ''' Class report includes parameters to track attributes of interests and
         methods to generate a report
@@ -531,6 +769,7 @@ class report:
     '''
     # import ptvsd
     # ptvsd.debug_this_thread()
+
     TEMPLATE_RELATIVE_PATH = 'templates'
 
     def __init__(self,aoi,template_path,feedback):
@@ -674,7 +913,6 @@ class report:
             logging.debug('V2GEOJSON: about to write (selected feat only)')
             # TODO use .writeAsVectorFormatV3
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-
             # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
             # error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
             logging.debug('V2GEOJSON: json written')
@@ -684,7 +922,6 @@ class report:
             # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
             #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON")
             logging.debug('V2GEOJSON: json written')
-
 
         assert error[0] == 0, 'error not equal to 0'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
@@ -990,185 +1227,3 @@ class oracle_pyqgis:
                 key_c = q.value(0)
 
         return key_c
-
-class  clipVectorTask(QgsTask):
-    """ This is a QgsTask that creates and clips a file based vector layer 
-    based on a file location"""
-    result = pyqtSignal(dict)
-    def __init__(self,clip_feature,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oracle_helper_obj=None,layer_table=None):
-        super().__init__(layer_title,QgsTask.CanCancel)
-        import ptvsd
-        ptvsd.debug_this_thread()
-        self.aoi = clip_feature
-        self.location = location
-        self.layer_title = layer_title
-        self.layer_sql = layer_sql
-        self.oq_helper = oracle_helper_obj
-        self.layer_table = layer_table
-        self.layer_subgroup = layer_subgroup
-        self.summary_fields = summary_fields
-        self.key = key
-        self.output = None
-        self.exception = None
-
-    def run(self):
-        """ run task
-        """
-        logging.debug(f'{self.layer_title} exists, starting processing')
-        features = self.aoi.getFeatures()
-        results = []
-        result = None
-        for item in features: # iterate through each item in aoi
-            self.aoi.select(item.id())
-            if self.location == 'BCGW':
-                results.append(self.process_oracle())
-            elif os.path.exists(self.location):
-                results.append(self.process_file_vector())
-            self.aoi.removeSelection()
-        if len(results)>1:
-            self.merge_results(results)
-        elif len(results)==1:
-            result = results[0]
-        else:
-            return False
-    
-        self.OUTPUT = result
-        return True
-    def process_file_vector(self):
-        rlayer = None
-        vlayer = None
-        result = None
-        filename, file_extension = os.path.splitext(self.location)
-        if len(self.layer_sql)>0:
-            location_sql = f"|subset={self.layer_sql}"
-        else:
-            location_sql = ""
-        coverage = False
-        if os.path.isdir(self.location):
-            dir_files = os.listdir(self.location)
-            for f in dir_files:
-                if ".adf" in f:
-                    coverage = True
-                    break
-        if coverage is True:
-            # load coverage
-            for f in os.listdir(self.location):
-                if f in ['arc.adf','pal.adf','lab.adf','cnt.adf']:
-                    vlayer = QgsVectorLayer(os.path.join(self.location,f), self.layer_title, "ogr")
-                if f == 'hdr.adf':
-                    rlayer = QgsRasterLayer(os.path.join(self.location,f),self.layer_title)
-        elif file_extension in ['.shp','.kml','.kmz','.geojson']:
-            file_location = self.location + location_sql
-            vlayer = QgsVectorLayer(file_location, self.layer_title, "ogr")
-            assert vlayer.isValid(),f"Failed to add {self.layer_title}:{filename}"
-        elif file_extension in ['.tif']:
-            rlayer = QgsRasterLayer(self.location,self.layer_title)
-            assert rlayer.isValid(),f"Failed to add {self.layer_title}:{filename}"
-        elif file_extension in ['.gdb','gpkg']:
-            ogr_string = f"{self.location}|layername={self.layer_table}{location_sql}"
-            vlayer = QgsVectorLayer(ogr_string, self.layer_title, "ogr")
-        else:
-            vlayer = None
-        if vlayer is not None:
-            logging.debug(f'{self.layer_title} is vector layer, starting processing')
-            try:
-                if vlayer.isValid():
-                    vlayer.setSubsetString(self.layer_sql)
-                    if vlayer.featureCount()>0:
-                        logging.debug(f'{self.layer_title} has valid geometry')
-                        result = processing.run("native:clip", {'INPUT':vlayer, 
-                            'OVERLAY': QgsProcessingFeatureSourceDefinition(self.aoi.id(), True), 'OUTPUT':f'memory:{self.layer_title}'})['OUTPUT']
-                        logging.debug(f'{self.layer_title} clipped')
-                    else:
-                        logging.debug(f'{self.layer_title} created empty vector layer')
-            except:
-                vlayer.setSubsetString(self.layer_sql)
-                if vlayer.featureCount()>0:
-                    logging.debug(f'{self.layer_title} has invalid geometry, fixing...')
-                    f_layer = processing.run("native:fixgeometries", {'INPUT':vlayer,'OUTPUT':'memory:{layer_title}fix'})['OUTPUT']
-                    logging.debug(f'{self.layer_title} geo fixed')
-                    result = processing.run("native:clip", {'INPUT':f_layer, 
-                        'OVERLAY': QgsProcessingFeatureSourceDefinition(self.aoi.id(), True), 'OUTPUT':f'memory:{self.layer_title}'})['OUTPUT']
-                    logging.debug(f'{self.layer_title} clipped')
-        return result
-
-    def process_oracle(self):
-        # get overlapping features
-        has_table = self.oq_helper.has_table(self.layer_table)
-        if has_table == True:
-            has_spatial_rows = self.oq_helper.has_spatial_rows(self.layer_table)
-        else:
-            has_spatial_rows = False
-        if has_table == True and has_spatial_rows == True:
-            # get features from bbox
-            selected_features = self.oq_helper.create_layer_anyinteract(overlay_layer=self.aoi,layer_name=self.layer_title,db_table=self.layer_table,sql=self.layer_sql)
-            try:
-                if selected_features.featureCount()>0:
-                    # clip them
-                    result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(self.aoi.id(), True), 'OUTPUT':f'memory:{self.layer_title}'})['OUTPUT']
-                    logging.debug(f"Clip of {self.layer_title} has {result.featureCount()} features")
-                else:
-                    # return layer with no features
-                    logging.debug(f'Oracle {self.layer_title} has no feature in AOI')
-                    result = selected_features
-            except:
-                try:
-                    logging.debug(f"Clip of {self.layer_title} failed attempt to repair geometry")
-                    f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
-                    result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(self.aoi.id(), True), 'OUTPUT':f'memory:{self.layer_title}'})['OUTPUT']
-                    logging.debug(f"Clip of fixed {self.layer_title} has {result.featureCount()} features")
-                    
-                except:
-                    logging.debug(f"Error in accessing {self.layer_title}")
-        return result
-
-    def merge_results(self,vector_layers):
-        try:
-            if len(vector_layers)>1:
-                result = processing.run("native:mergevectorlayers", 
-                    {'LAYERS':vector_layers, 'CRS':QgsCoordinateReferenceSystem('EPSG:3005'),'OUTPUT':f'memory:{self.layer_title}'})['OUTPUT']
-                result.setCrs(QgsCoordinateReferenceSystem('EPSG:3005'),True)
-            else:
-                result = vector_layers[0]
-            if result.crs().authid() != 'EPSG:3005':
-                result = processing.run('native:reprojectlayer', 
-                    {'INPUT': result, 'TARGET_CRS': 'EPSG:3005', 'OUTPUT': f'memory:{self.layer_title}'})['OUTPUT']
-            idx = result.fields().indexFromName( 'SE_ANNO_CAD_DATA' )
-            if idx != (-1):
-                res = result.dataProvider().deleteAttributes([idx])
-                result.updateFields()
-        except:
-            self.feedback.pushInfo(f"Could not merge results for {self.layer_title}")
-        return result
-        
-    def finished(self,result):
-        if result:
-            QgsMessageLog.logMessage(
-                f'Clip file vectorlayer {self.description()} completed',
-                MESSAGE_CATEGORY, Qgis.Success)
-            # self.location = location
-            # self.layer_title = layer_title
-            # self.layer_sql = layer_sql
-            # self.oq_helper = oracle_helper_obj
-            # self.layer_table = layer_table
-            # self.layer_subgroup = layer_subgroup
-            # self.summary_fields = summary_fields
-            # self.key = key
-            self.result.emit({"location":self.location,
-                            "layer_title":self.layer_title,
-                            "layer_sql":self.layer_sql,
-                            "layer_table":self.layer_table,
-                            "layer_subgroup":self.layer_subgroup,
-                            "summary_fields":self.summary_fields,
-                            "key":self.key,
-                            "result":self.OUTPUT})
-        else:
-            QgsMessageLog.logMessage(
-                    f'Clip file vectorlayer {self.description()} Exception: {self.exception}',
-                    MESSAGE_CATEGORY, Qgis.Critical)
-            raise self.exception # this can be populated in task with eg. self.exception = Exception("Layer failed to merge")
-    def cancel(self):
-        QgsMessageLog.logMessage(
-            'Clip file vectorlayer {self.description} was cancelled',
-            MESSAGE_CATEGORY, Qgis.Info)
-        super().cancel()
