@@ -41,4 +41,27 @@
             </div>
           </article>
     {% endfor %}
-{% endblock content %}
+  {% endblock %}
+
+  {% block failed %}
+    {% if failedLyrs|length > 0 %} 
+    <div><h3>Failed layers</h></div>
+      {% for i in failedLyrs %}
+            <article class="value {{ i['group']|replace(' ', '_') }} media content-section">
+              <div id= "value_data" class="media-body">
+                <div class="article-metadata">
+  
+                </div>
+                <h3><p class="article-title">{{ i['group'] }}: {{ i['name'] }}</p></h3>
+                {% if i['comment'] is not none %}
+                <p class="list-group-item list-group-item-light">Failed layer: {{i['comment']}}</p>
+                {% else %}
+                <p class="list-group-item list-group-item-light">Failed layer</p>
+                {% endif %}
+              </div>
+            </article>
+      {% endfor %}
+    {% else %}
+    <div><p>All layers loaded successfully</p></div>
+    {% endif %}
+  {% endblock %} 
