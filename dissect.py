@@ -36,6 +36,10 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterString,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFileDestination,
+                       QgsProcessingParameterAuthConfig,
+                       QgsProcessingParameterDefinition,
+                       QgsProcessingParameterBoolean,
+                       QgsFeatureRequest,
                        QgsWkbTypes,
                        QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform,
@@ -48,8 +52,11 @@ from qgis.core import (QgsProcessing,
                        QgsDataSourceUri,
                        QgsProject,
                        QgsMessageLog,
-                       QgsTask,
-                       Qgis
+                       Qgis,
+                       QgsApplication,
+                       QgsAuthManager,
+                       QgsAuthMethodConfig,
+                       QgsTask
                        )
 
 from qgis import processing
@@ -68,14 +75,15 @@ import logging
 
 MESSAGE_CATEGORY = 'Messages'
 
-def enable_remote_debugging():
+def enable_remote_debugging(self):
     try:
         import ptvsd
         if ptvsd.is_attached():
             QgsMessageLog.logMessage("Remote Debug for Visual Studio is already active", MESSAGE_CATEGORY, Qgis.Info)
             logging.debug('Remote Debug for Visual Studio already attached')
             return
-        ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, '/ptvsd_log'))
+        # ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, 'ptvsd_log'))
+        ptvsd.enable_attach(address=('localhost', 5678))
         QgsMessageLog.logMessage("Attached remote Debug for Visual Studio", MESSAGE_CATEGORY, Qgis.Info)
         logging.debug('Attached remote Debug for Visual Studio')
 
@@ -95,31 +103,36 @@ class DissectAlg(QgsProcessingAlgorithm):
     # used when calling the algorithm from another algorithm, or when
     # calling from the QGIS console.
 
-    #INPUT = 'INPUT'
     AOI = 'AOI'
     XLS_CONFIG_IN = 'XLS_CONFIG_IN'
     DATABASE = 'DATABASE'
-    USER = 'USER'
-    PASSWORD = 'PASSWORD'
+    HOST = 'HOST'
+    PORT = 'PORT'
+    AUTH_CONFIG = 'AUTH_CONFIG'
     OUTPUT = 'OUTPUT'
+    ADD_INTERESTS = 'ADD_INTERESTS'
           
     def config(self):
         self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
-        if not os.path.exists(os.path.join(self.CONFIG_PATH, 'logs')):
-            os.mkdir(os.path.join(self.CONFIG_PATH, 'logs'))
 
-        logging.basicConfig(
-        filename = os.path.join(self.CONFIG_PATH, 'logs', 'dissect.log'),
-        # filemode = 'w',
-        encoding='utf-8',
-        level=logging.DEBUG,
-        format = '%(name)s - %(levelname)s - %(message)s'
-        )
-        
-        logging.debug('Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S"))
+        temppath = os.environ['TEMP']
+
 
         try:
-            enable_remote_debugging()
+            logging.basicConfig(
+            filename = os.path.join(temppath, 'dissect.log'),
+            # filemode = 'w',
+            encoding='utf-8',
+            level=logging.DEBUG,
+            format = '%(name)s - %(levelname)s - %(message)s'
+            )
+        except:
+            feedback.pushInfo("Could not enable logging")
+        
+        logging.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
+
+        try:
+            enable_remote_debugging(self)
         except: 
             QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
             
@@ -130,8 +143,6 @@ class DissectAlg(QgsProcessingAlgorithm):
         self.menu = self.tr(u'&ThabReport')
         self.protected_tables = self.get_protected_tables(self.SECURE_TABLES_CONFIG)
                
-        # TODO add checkbox for 'add interests to map'
-        self.add_interests = True
         self.tool_map_layers = []
         self.failed_layers =[]
         self.taskManager = QgsApplication.taskManager()
@@ -209,75 +220,98 @@ class DissectAlg(QgsProcessingAlgorithm):
         """
         Here we define the inputs and output of the algorithm, along
         with some other properties.
-        """
-        # TODO add param for useSelected checkbox
-        if 'QENV_DB_USER' not in os.environ:
-            user = ''
-        else:
-            user = os.environ['QENV_DB_USER']
-        
+        """      
         if 'QENV_DB' not in os.environ:
             db = ''
         else:
             db = os.environ['QENV_DB']
+        if 'QENV_HOST' not in os.environ:
+            host = ''
+        else:
+            host = os.environ['QENV_HOST']
+        if 'QENV_PORT' not in os.environ:
+            port = ''
+        else:
+            port = os.environ['QENV_PORT']
         if 'QENV_XLS_CONFIG' not in os.environ:
             xls_config = ''
         else:
             xls_config = os.environ['QENV_XLS_CONFIG']
-        if 'QENV_DB_PASS' not in os.environ:
-            dbpass = ''
-        else:
-            dbpass = os.environ['QENV_DB_PASS']
         if 'QENV_OUT' not in os.environ:
             outfile = ''
         else:
-            outfile = os.environ['QENV_OUT']+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+            outfile = os.environ['QENV_OUT']+'report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+
+        
         self.addParameter(
-            QgsProcessingParameterVectorLayer(
+            QgsProcessingParameterFeatureSource(
                 self.AOI,
                 self.tr('Area of Interest'),
-                [QgsProcessing.TypeVectorPolygon]
+                types=[QgsProcessing.TypeVectorPolygon]
             )
+        )
+        xl_param = QgsProcessingParameterFile(
+                    name = self.XLS_CONFIG_IN,
+                    description = self.tr('Input .xlsx coniguration file'),
+                    optional = False,
+                    extension = "xlsx",
+                    defaultValue = xls_config  
+                    )  
+        xl_param.setFlags(xl_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(xl_param)
+        
+        db_param = QgsProcessingParameterString(
+                    self.DATABASE,
+                    self.tr('Database'),
+                    defaultValue = db,
+                    optional = True
+                    )
+        db_param.setFlags(db_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(db_param)
 
-        )
+        host_param = QgsProcessingParameterString(
+                    self.HOST,
+                    self.tr('Host'),
+                    defaultValue = host,
+                    optional = True
+                    )
+        host_param.setFlags(host_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(host_param)
+
+        port_param = QgsProcessingParameterString(
+                    self.PORT,
+                    self.tr('Port'),
+                    defaultValue = port,
+                    optional = True
+                    )
+        port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(port_param)
+        
         self.addParameter(
-            QgsProcessingParameterFile(
-                name = self.XLS_CONFIG_IN,
-                description = self.tr('Input .xlsx coniguration file'),
-                optional = False,
-                extension = "xlsx",
-                defaultValue = xls_config
+            QgsProcessingParameterAuthConfig(
+                self.AUTH_CONFIG,
+                self.tr('Database authentication'),
+                optional = True
             )
         )
+
+        out_param = QgsProcessingParameterFileDestination(
+                    self.OUTPUT,
+                    self.tr('Report output file'),
+                    'HTML files (*.html)',
+                    defaultValue = outfile
+                    )
+        port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagIsModelOutput)
+        self.addParameter(out_param)
+
         self.addParameter(
-            QgsProcessingParameterString(
-                self.DATABASE,
-                self.tr('Database'),
-                defaultValue = db
+            QgsProcessingParameterBoolean(
+                self.ADD_INTERESTS,
+                self.tr('Add overlapping interests to map'),
+                defaultValue = False
             )
         )
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.USER,
-                self.tr('DB Username'),
-                defaultValue = user
-            )
-        )
-        self.addParameter(
-            QgsProcessingParameterString(
-                self.PASSWORD,
-                self.tr('DB Password'),
-                defaultValue = dbpass
-            )
-        )
-        self.addParameter(
-            QgsProcessingParameterFileDestination(
-                self.OUTPUT,
-                self.tr('Output File eg. T:/myproject/myproject_overlap_report.html'),
-                'HTML files (*.html)',
-                defaultValue = outfile
-            )
-        )
+
 
     def parse_config(self,xlsx):
         ''' parses xls into list of dictionaries 
@@ -315,16 +349,17 @@ class DissectAlg(QgsProcessingAlgorithm):
         # Retrieve the feature source and sink. The 'dest_id' variable is used
         # to uniquely identify the feature sink, and must be included in the
         # dictionary returned by the processAlgorithm function.
-        aoi = self.parameterAsVectorLayer(parameters, 'AOI', context)
+        
+        aoiSource = self.parameterAsSource(parameters, 'AOI', context) # TODO do we need to use this for input w ParameterFeatureSource?
+        aoi = aoiSource.materialize(QgsFeatureRequest())
         config_xls = self.parameterAsFile(parameters, 'XLS_CONFIG_IN', context)
-        user = self.parameterAsString(parameters, 'USER', context)
-        password = self.parameterAsString(parameters, 'PASSWORD', context)
+        auth_method_id = self.parameterAsString(parameters, 'AUTH_CONFIG', context)
         output_html = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
+        self.add_interests = self.parameterAsBoolean(parameters, 'ADD_INTERESTS', context)
         database = self.parameterAsString(parameters, 'DATABASE', context)
-        # do these manually for now (not in dialogue)
-        host = 'bcgw.bcgov'  
-        port = '1521'
-               
+        host = self.parameterAsString(parameters, 'HOST', context)
+        port = self.parameterAsString(parameters, 'PORT', context)
+
         if feedback.isCanceled():
             feedback.pushInfo('Process cancelled by user.')
             return {}
@@ -334,14 +369,36 @@ class DissectAlg(QgsProcessingAlgorithm):
 
         aoi_in = aoi
         xls_file = config_xls
+
+        output = output_html
+        
+        # get the application's authenticaion manager
+        auth_mgr = QgsApplication.authManager()
+        # create an empty authmethodconfig object
+        auth_cfg = QgsAuthMethodConfig()
+        # load config from manager to the new config instance and decrypt sensitive data
+        auth_mgr.loadAuthenticationConfig(auth_method_id, auth_cfg, True)
+        # get the configuration information (including username and password)
+        auth_info = auth_cfg.configMap()
+        try:
+            user = auth_info['username']
+            password = auth_info['password']
+        except:
+            user = ''
+            password = ''
+
         self.html_file = output_html
 
-
-        # TODO set up use selected feature
+        # TODO clean up
+        '''
+        I'm pretty sure if we take this route we can delete all the
+        references to use_selected as aoiSource either only takes the selected
+        features (or only passes on selected features during materialize()) 
+        '''
         use_selected = False
 
         try:
-            if aoi_in.selectedFeatureCount()>0 and use_selected == True:
+            if use_selected == True and aoi_in.selectedFeatureCount()>0:
                 #export to in memory layer
                 aoi = processing.run("native:saveselectedfeatures", {'INPUT': aoi_in, 'OUTPUT': 'memory:'})['OUTPUT']
             else:
@@ -361,7 +418,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             # QgsApplication.taskManager().allTasksFinished.connect(self.generate_report)
             # creates list of all fc to compare aoi too
             parsed_input = self.parse_config(xls_file)
-            logging.debug('Config xlsx parsed successfully')
+            logging.debug(f'Config xlsx parsed successfully ({xls_file})')
 
             ## TODO set up progress bar
             # progress.setValue(5)
@@ -376,16 +433,20 @@ class DissectAlg(QgsProcessingAlgorithm):
             i = (90 / estimated_count)
             feedback.pushInfo(f"Evaluating {estimated_count} interests")
             for tab_dict in parsed_input:
+                logging.debug(f'Processing tab_dict: {tab_dict}')
                 if feedback.isCanceled():
                     feedback.pushInfo('Process cancelled by user.')
                     return {}
                 for key in tab_dict:
+                    logging.debug(f'Processing key: {key}')
                     if feedback.isCanceled():
                         feedback.pushInfo('Process cancelled by user.')
                         return {}
                     tab = tab_dict[key]
                     for dic in tab:
-                        # iterate over data definitions
+
+                        logging.debug(f'Processing dic: {dic}')
+
                         if feedback.isCanceled():
                             feedback.pushInfo('Process cancelled by user.')
                             return {}
@@ -393,7 +454,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                         layer_title = dic['Layer Name']
                         if layer_title is not None:
                             layer_title = layer_title.strip()
-                            logging.debug(f'Processing {layer_title}')
+                            logging.debug(f'Processing layer: {layer_title}')
                             layer_subgroup = dic['Layer Group Heading']
                             layer_table = dic['Feature Class Name']
                             if layer_table is not None:
@@ -405,12 +466,14 @@ class DissectAlg(QgsProcessingAlgorithm):
                             if layer_sql is None:
                                 layer_sql = ''
                             layer_expansion = dic['Attribute ID']
+
                             if (layer_expansion is None):
                                 layer_expansion = ''
                             if len(layer_expansion)>0:
                                 summary_fields = [f.strip() for f in layer_expansion.split(',')]
                             else:
                                 summary_fields = []
+
                             #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
                             feedback.pushInfo('--- ' + str(layer_title) + ' ---')
                             features = aoi.getFeatures()
@@ -422,23 +485,19 @@ class DissectAlg(QgsProcessingAlgorithm):
                             logging.error(f'----- No Title {layer_title}')
         except:
             logging.error(f'Error in processAlgorithm')
-
-
         logging.debug(f'Loading {len(self.tasks)} tasks to .taskManager')
-        # allow for existing tasks in taskManager. 
         loaded_task_ids = []
         for task in self.tasks:
             task.result.connect(lambda r: self.logTask(r))
             self.taskManager.addTask(task)
             loaded_task_ids.append(self.taskManager.taskId(task))
-        logging.debug(f'All tasks loaded')    
+            
         while len(loaded_task_ids) > 0:
             for id in loaded_task_ids:
                 if id not in [self.taskManager.taskId(t) for t in self.taskManager.activeTasks()]:
                     loaded_task_ids.remove(id)
             QCoreApplication.processEvents()
-        logging.debug("All tasks complete")
-        logging.debug("Adding tasks to report")
+
         for task in self.complete_tasks:
             logging.debug(f"task {task['layer_title']}")
             if task['result'] is not None:
@@ -458,7 +517,6 @@ class DissectAlg(QgsProcessingAlgorithm):
         return result_msg 
     def logTask(self,task_results):
         self.complete_tasks.append(task_results)
-
 class report:
     ''' Class report includes parameters to track attributes of interests and
         methods to generate a report
@@ -475,7 +533,6 @@ class report:
     '''
     # import ptvsd
     # ptvsd.debug_this_thread()
-
     TEMPLATE_RELATIVE_PATH = 'templates'
 
     def __init__(self,aoi,template_path,feedback):
@@ -617,12 +674,19 @@ class report:
         if layer.selectedFeatureCount()>0:
             options.onlySelectedFeatures = True
             logging.debug('V2GEOJSON: about to write (selected feat only)')
+            # TODO use .writeAsVectorFormatV3
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+
+            # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            # error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
             logging.debug('V2GEOJSON: json written')
         else:
             logging.debug('V2GEOJSON: about to write')
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON")
             logging.debug('V2GEOJSON: json written')
+
 
         assert error[0] == 0, 'error not equal to 0'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
@@ -688,7 +752,6 @@ class report:
         template = None
         return outfile
 
-
 class oracle_pyqgis:
     ''' oracle_pyqgis has utilities for creating qgsVectorLayer objects for loading into QGIS
     constructor (database: str,
@@ -742,6 +805,7 @@ class oracle_pyqgis:
             layer_name: str,
             db_table: str
             usage = oracle_pyqgis.create_oracle_layer(self,overlay_layer=myQgsVectorLayer layer_name="My Layer", db_table="myschema.mytable")
+
         '''
         start_time = time.time()
         
@@ -928,6 +992,7 @@ class oracle_pyqgis:
                 key_c = q.value(0)
 
         return key_c
+
 class  clipVectorTask(QgsTask):
     """ This is a QgsTask that creates and clips a file based vector layer 
     based on a file location"""
