@@ -458,6 +458,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         return result_msg 
     def logTask(self,task_results):
         self.complete_tasks.append(task_results)
+
 class report:
     ''' Class report includes parameters to track attributes of interests and
         methods to generate a report
@@ -474,6 +475,7 @@ class report:
     '''
     # import ptvsd
     # ptvsd.debug_this_thread()
+
     TEMPLATE_RELATIVE_PATH = 'templates'
 
     def __init__(self,aoi,template_path,feedback):
@@ -482,7 +484,8 @@ class report:
         self.template_path = template_path
         self.interests = []
         self.aoi = self.aoi_info(aoi)
-        self.aoi_layer = aoi
+        self.aoi_layer = aoi # TODO remove? never used?
+        self.failedLyrs = []
         
     def aoi_info(self,aoi):
         '''prepars key:value dict with keys name,area,geojson
@@ -515,10 +518,11 @@ class report:
         ''' add an interest to the report
             parameters: interested_layer
         '''
-        # self.fb.pushInfo(f"REPORT add interest: {intersected_layer.name()}({intersected_layer.featureCount()})")
+        
         interest = {'name':intersected_layer.name(),
             'group':group,
             'subgroup':subgroup}
+        logging.debug(f'Building report: adding interest {interest}')
         fieldNames = [field.name() for field in intersected_layer.fields()]
         summary_dict = {}
         d = {'count':0,'length':0.0,'area':0.0}
@@ -539,11 +543,17 @@ class report:
                 l = geom.length()
                 d['length'] += l
             else:
+                logging.error(f"Unexpected geometry type:{geom_type} during add_interest")
                 raise Exception (f"Unexpected geometry type:{geom_type}")
             value_merge = []
             for sf in summary_fields:
                 assert sf in fieldNames, f"summary field ({sf}) does not exist in layer({intersected_layer.name()})"
-                value_merge.append(str(f[sf]))
+                value = f[sf]
+                if isinstance(value, QDateTime): # convert QDateTime to formatted string
+                    value=value.toPyDateTime().date().isoformat()
+                else:
+                    value = str(value)
+                value_merge.append(value)
             if len(value_merge)>0:
                 value_string =" | ".join(value_merge)
                 field_string =" | ".join(summary_fields)
@@ -563,7 +573,7 @@ class report:
                     summary_dict[value_string]['unit']='ha'
             else:
                 field_string=''
-
+        
         if (d['area']>0):
             interest['value'] = d['area']/10000
             interest['unit'] = 'ha'
@@ -581,18 +591,23 @@ class report:
             if secure is True:
                 interest['geojson'] = None   
             else: 
+                logging.debug(f'Exporting {intersected_layer} to geojson')
                 interest['geojson'] = self.vectorlayer_to_geojson(intersected_layer)
+                logging.debug('Exported to geojson, geojson returned')
         else:
             interest['geojson'] = None
             interest['field_summary'] = []
         self.interests.append(interest)
+        logging.debug('Interest appended to interests')
     def vectorlayer_to_geojson(self,layer):
         '''Export QgsVectorlayer to temp geojson'''
         file_name = layer.name().replace(' ','_').replace('.','_') + ".geojson"
         file_name = file_name.replace('/','_')
         file_name = file_name.replace('\\','_')
+        logging.debug('V2GEOJSON: geojson name built')
         temp_path = os.environ['TEMP']
         geojson_path = os.path.join(temp_path,file_name)
+        logging.debug('V2GEOJSON: geojson path built')
         destcrs = QgsCoordinateReferenceSystem("EPSG:4326")
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.driverName = "GeoJSON"
@@ -601,25 +616,40 @@ class report:
         options.ct = QgsCoordinateTransform(layer.sourceCrs() ,destcrs,context)
         if layer.selectedFeatureCount()>0:
             options.onlySelectedFeatures = True
-            # TODO use .writeAsVectorFormatV3
+            logging.debug('V2GEOJSON: about to write (selected feat only)')
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            
+            logging.debug('V2GEOJSON: json written')
         else:
+            logging.debug('V2GEOJSON: about to write')
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            
+            logging.debug('V2GEOJSON: json written')
+
         assert error[0] == 0, 'error not equal to 0'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
         # TODO get feedback working within report class
         # self.fb.pushInfo(f"export json --> {geojson_path}")
+        logging.debug('V2GEOJSON: assert passed, about to load json')
         geojson = self.load_geojson(geojson_path)
+        logging.debug('V2GEOJSON: json loaded')
         return geojson
 
-    
     def load_geojson(self,file):
         ''' loads a json file to string '''
         with open(file) as f:
             data = json.load(f)
         return json.dumps(data)
+
+    def add_failed(self, layer_title, subgroup, group, comment=None):
+        ''' add a failed interest to the report'''
+        logging.debug(f"REPORT add failed layer: {layer_title}")
+        failedLyr = {'name':layer_title,
+            'group':group,
+            'subgroup':subgroup,
+            'comment':comment}   
+
+        self.failedLyrs.append(failedLyr)
+        logging.debug('Interest appended to failed layers')
+
     def report(self,outfile):
         """ Build html report based on self.interests --> html file
         """
@@ -628,7 +658,7 @@ class report:
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(
             searchpath=os.path.join(self.template_path,self.TEMPLATE_RELATIVE_PATH))
             )
-        template = env.get_template('home.html')
+        template = env.get_template('home.html', parent='layout.html')
         intersecting_layers = []
         non_intersecting_layers=[]
         for i in self.interests:
@@ -639,13 +669,25 @@ class report:
         layers = [i for i in self.interests]
         layer_sort = sorted(intersecting_layers, key=lambda k: k['value'],reverse=True) 
         layers = layer_sort + non_intersecting_layers
-        ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate)
+        ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate, failedLyrs = self.failedLyrs)
         #ahtml = template.render(species=aoi.species, shape=aoi.poly,aoi=aoi)
+        outpath = os.path.dirname(outfile)
+        # Check whether the specified path exists or not
+        pathExist = os.path.exists(outpath)
+        logging.debug(f'Output path {outpath} exists: {pathExist}')
+        if not pathExist:      
+            # Create a new directory because it does not exist 
+            os.makedirs(outpath)
+            logging.debug('Outpath created')
         with open(outfile, 'w') as f:
             f.write(ahtml)    
+        logging.debug(f'Report written to file ({(os.path.getsize(outfile)/1000):.0f} KB)')
         #the last hurah!
         # arcpy.SetParameterAsText(1, outfile)
+        env = None
+        template = None
         return outfile
+
 
 class oracle_pyqgis:
     ''' oracle_pyqgis has utilities for creating qgsVectorLayer objects for loading into QGIS
@@ -670,34 +712,36 @@ class oracle_pyqgis:
     def __del__(self):
         # close db before destruction
         self.close_db_connection()
+        self.db = None
+        qdb = None
 
     def open_db_connection(self):
         ''' open_db_connection creates and opens a db connection to the oracle database
         '''
+        logging.debug('Attempting db connection')
         driver ="QOCISPATIAL"
         conn_name = "bcgw_conn"
-        if not QSqlDatabase.contains(conn_name):
-            self.db = QSqlDatabase.addDatabase(driver,conn_name)
-        else:
-            self.db = QSqlDatabase.database(conn_name)
+        qdb = QSqlDatabase()
+        self.db = qdb.addDatabase(driver,conn_name)
         self.db.setDatabaseName(self.host + "/" + self.database)
         self.db.setUserName(self.user_name) 
         self.db.setPassword(self.user_pass) 
         db_open = self.db.open()
+        logging.debug(f'db connection status: {db_open}')
         return db_open
     def close_db_connection(self):
         ''' close_db_connection closes db connection to the oracle database
         '''
         if self.db.isOpen():
             self.db.close()
-        
+            logging.debug(f'db connection closed')
+                
     def create_layer_anyinteract(self,overlay_layer,layer_name,db_table,sql):
         ''' creates a qgsvectorlayer using an anyinteract query
             overlay_layer: qgsvectorlayer, QgsFeature
             layer_name: str,
             db_table: str
             usage = oracle_pyqgis.create_oracle_layer(self,overlay_layer=myQgsVectorLayer layer_name="My Layer", db_table="myschema.mytable")
-
         '''
         start_time = time.time()
         
@@ -884,7 +928,6 @@ class oracle_pyqgis:
                 key_c = q.value(0)
 
         return key_c
-
 class  clipVectorTask(QgsTask):
     """ This is a QgsTask that creates and clips a file based vector layer 
     based on a file location"""
