@@ -402,7 +402,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             QgsProject.instance().addMapLayer(aoi,False)
             
             # create db object 
-            oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password)
+            oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password,feedback=None)
 
             # init report with AOI
             report_obj = report(aoi,template_path=self.CONFIG_PATH,feedback=None)
@@ -998,8 +998,9 @@ class oracle_pyqgis:
     # import ptvsd
     # ptvsd.debug_this_thread()
 
-    def __init__(self,database,host,port,user,password):
+    def __init__(self,database,host,port,user,password,feedback):
         
+        self.fb = feedback
         self.user_name = user
         self.user_pass = password
         self.host = host
@@ -1027,12 +1028,25 @@ class oracle_pyqgis:
         db_open = self.db.open()
         logging.debug(f'db connection status: {db_open}')
         return db_open
+    
     def close_db_connection(self):
         ''' close_db_connection closes db connection to the oracle database
         '''
         if self.db.isOpen():
             self.db.close()
             logging.debug(f'db connection closed')
+    
+    def check_connection(self):
+        if not self.db.isOpen():
+            try:
+                if self.db.open() is False:
+                    self.open_db_connection()
+                assert self.db.isOpen()
+            except:
+                logging.error(f"Failed to connect to {self.database}/{self.host}")
+                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+
+                
                 
     def create_layer_anyinteract(self,overlay_layer,layer_name,db_table,sql):
         ''' creates a qgsvectorlayer using an anyinteract query
@@ -1110,13 +1124,7 @@ class oracle_pyqgis:
         '''
         owner, table = db_table.split('.')
         
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db) 
         query = f"select VIEW_NAME NAME from all_views where owner = '{owner}' and VIEW_NAME = '{table}' union select TABLE_NAME NAME from all_tables where owner = '{owner}' and TABLE_NAME = '{table}'"
         q.exec(query)
@@ -1131,13 +1139,7 @@ class oracle_pyqgis:
         '''
         owner,table = db_table.split('.') 
         geom_column_name = self.get_bcgw_geomcolumn(db_table=db_table)
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db)
         # confrm there are rows
         query = f"SELECT rownum from {owner}.{table} t where rownum=1"
@@ -1168,13 +1170,7 @@ class oracle_pyqgis:
                         7:QgsWkbTypes.MultiPolygon}
         
         owner,table = db_table.split('.') 
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db) 
         query = f"SELECT MAX(t.{geom_column_name}.GET_GTYPE()) AS geometry_type from {owner}.{table} t where rownum <10"
         q.exec(query) 
@@ -1188,13 +1184,7 @@ class oracle_pyqgis:
     def get_bcgw_geomcolumn(self,db_table):
         '''returns the name of the geometry column for oracle table '''
         owner,table = db_table.split('.') 
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db) 
         query ="SELECT COLUMN_NAME from all_tab_columns where OWNER = '{}' AND TABLE_NAME = '{}' AND DATA_TYPE = 'SDO_GEOMETRY'".format(owner,table)  
         q.exec(query) 
@@ -1206,13 +1196,7 @@ class oracle_pyqgis:
         ''' estimate a unique id column for an oracle table if OBJECTID does not exist '''
         # estimate a unique id column for an oracle table if OBJECTID does not exist
         owner,table = db_table.split('.') 
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db)
         sql = f"SELECT cols.column_name \
         FROM all_tab_cols cols where cols.table_name = '{table}' and cols.COLUMN_NAME like \'OBJECTID\'"
