@@ -1000,7 +1000,6 @@ class  clipVectorTask(QgsTask):
     def __init__(self,clip_feature,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oracle_helper_obj=None,layer_table=None):
         super().__init__(layer_title,QgsTask.CanCancel)
         import ptvsd
-        ptvsd.debug_this_thread()
         self.aoi = clip_feature
         self.location = location
         self.layer_title = layer_title
@@ -1016,6 +1015,8 @@ class  clipVectorTask(QgsTask):
     def run(self):
         """ run task
         """
+        import ptvsd
+        ptvsd.debug_this_thread()
         logging.debug(f'{self.layer_title} exists, starting processing')
         features = self.aoi.getFeatures()
         results = []
@@ -1144,6 +1145,8 @@ class  clipVectorTask(QgsTask):
         return result
         
     def finished(self,result):
+        import ptvsd
+        ptvsd.debug_this_thread()
         if result:
             QgsMessageLog.logMessage(
                 f'Clip file vectorlayer {self.description()} completed',
