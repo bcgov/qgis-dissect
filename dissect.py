@@ -474,7 +474,6 @@ class DissectAlg(QgsProcessingAlgorithm):
                             else:
                                 summary_fields = []
 
-
                             #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
                             feedback.pushInfo('--- ' + str(layer_title) + ' ---')
                             features = aoi.getFeatures()
@@ -486,15 +485,18 @@ class DissectAlg(QgsProcessingAlgorithm):
                             logging.error(f'----- No Title {layer_title}')
         except:
             logging.error(f'Error in processAlgorithm')
-        logging.error(f'Loading {len(self.tasks)} tasks to .taskManager')
+        logging.debug(f'Loading {len(self.tasks)} tasks to .taskManager')
+        loaded_task_ids = []
         for task in self.tasks:
             task.result.connect(lambda r: self.logTask(r))
             self.taskManager.addTask(task)
-            print (task.description())
-            #task.run()
-        while len(self.taskManager.activeTasks())>0:
+            loaded_task_ids.append(self.taskManager.taskId(task))
+            
+        while len(loaded_task_ids) > 0:
+            for id in loaded_task_ids:
+                if id not in [self.taskManager.taskId(t) for t in self.taskManager.activeTasks()]:
+                    loaded_task_ids.remove(id)
             QCoreApplication.processEvents()
-
 
         for task in self.complete_tasks:
             logging.debug(f"task {task['layer_title']}")
