@@ -422,19 +422,23 @@ class DissectAlg(QgsProcessingAlgorithm):
                             logging.error(f'----- No Title {layer_title}')
         except:
             logging.error(f'Error in processAlgorithm')
+
+
         logging.debug(f'Loading {len(self.tasks)} tasks to .taskManager')
+        # allow for existing tasks in taskManager. 
         loaded_task_ids = []
         for task in self.tasks:
             task.result.connect(lambda r: self.logTask(r))
             self.taskManager.addTask(task)
             loaded_task_ids.append(self.taskManager.taskId(task))
-            
+        logging.debug(f'All tasks loaded')    
         while len(loaded_task_ids) > 0:
             for id in loaded_task_ids:
                 if id not in [self.taskManager.taskId(t) for t in self.taskManager.activeTasks()]:
                     loaded_task_ids.remove(id)
             QCoreApplication.processEvents()
-
+        logging.debug("All tasks complete")
+        logging.debug("Adding tasks to report")
         for task in self.complete_tasks:
             logging.debug(f"task {task['layer_title']}")
             if task['result'] is not None:
