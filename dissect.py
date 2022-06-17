@@ -498,6 +498,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                     loaded_task_ids.remove(id)
             QCoreApplication.processEvents()
 
+        logging.debug('All tasks complete, processing complete_tasks')
         for task in self.complete_tasks:
             logging.debug(f"task {task['layer_title']}")
             if task['result'] is not None:
@@ -512,10 +513,13 @@ class DissectAlg(QgsProcessingAlgorithm):
             else:
                 logging.debug(f"task {task['layer_title']} did not generate output")
         result_msg = {}
+        logging.debug('Preparing to write report')
         self.report.report(self.html_file)
+        logging.debug('Report written')
         result_msg[self.OUTPUT] = self.html_file
         return result_msg 
     def logTask(self,task_results):
+        logging.debug(f"Logged task {task_results['layer_title']}")
         self.complete_tasks.append(task_results)
 class report:
     ''' Class report includes parameters to track attributes of interests and
