@@ -478,7 +478,10 @@ class DissectAlg(QgsProcessingAlgorithm):
                             feedback.pushInfo('--- ' + str(layer_title) + ' ---')
                             features = aoi.getFeatures()
                             logging.debug(f'Starting task for {layer_title}')
-                            task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oq_helper,layer_table)
+                            if location == 'BCGW':
+                                task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oq_helper,layer_table)
+                            else:
+                                task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oracle_helper_obj=None,layer_table=layer_table)
                             # task.run() # only do this if you want to bypass taskManager
                             self.tasks.append(task)
                         else:
@@ -487,6 +490,8 @@ class DissectAlg(QgsProcessingAlgorithm):
             logging.error(f'Error in processAlgorithm')
         logging.debug(f'Loading {len(self.tasks)} tasks to .taskManager')
         loaded_task_ids = []
+        # attach logging for monitoring task deletion
+        self.taskManager.taskAboutToBeDeleted.connect(self.logTaskDeletion)
         for task in self.tasks:
             task.result.connect(lambda r: self.logTask(r))
             self.taskManager.addTask(task)
@@ -499,6 +504,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             QCoreApplication.processEvents()
 
         logging.debug('All tasks complete, processing complete_tasks')
+        self.taskManager.taskAboutToBeDeleted.disconnect(self.logTaskDeletion)
         for task in self.complete_tasks:
             logging.debug(f"task {task['layer_title']}")
             if task['result'] is not None:
@@ -521,6 +527,10 @@ class DissectAlg(QgsProcessingAlgorithm):
     def logTask(self,task_results):
         logging.debug(f"Logged task {task_results['layer_title']}")
         self.complete_tasks.append(task_results)
+    def logTaskDeletion(self,taskId):
+        logging.debug(f"Task {taskId} - is being deleted")
+        # logging.debug(f"Task {taskId} status: {task.status()} 0- Queued 1- OnHold 2-Running 3-Complete 4-Terminated")
+        
 class report:
     ''' Class report includes parameters to track attributes of interests and
         methods to generate a report
