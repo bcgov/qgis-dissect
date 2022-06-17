@@ -398,21 +398,25 @@ class DissectAlg(QgsProcessingAlgorithm):
         use_selected = False
 
         try:
+            aoi_tempfile = os.environ['TEMP'] + '/' +'aoi.gpkg'
             if use_selected == True and aoi_in.selectedFeatureCount()>0:
                 #export to in memory layer
-                aoi = processing.run("native:saveselectedfeatures", {'INPUT': aoi_in, 'OUTPUT': 'memory:'})['OUTPUT']
-            else:
-                aoi = aoi_in.clone()
-            if aoi.sourceCrs().isGeographic:
-                parameter = {'INPUT': aoi, 'TARGET_CRS': 'EPSG:3005','OUTPUT': 'memory:aoi'}
+                aoi = processing.run("native:saveselectedfeatures", {'INPUT': aoi_in, 'OUTPUT':'memory: aoi\' table="aoi" (geom)'})['OUTPUT']
+            if aoi.sourceCrs().isGeographic() == True:
+                parameter = {'INPUT': aoi, 'TARGET_CRS': 'EPSG:3005','OUTPUT': f'ogr:dbname=\'{aoi_tempfile}\' table="aoi" (geom)'}
                 aoi = processing.run('native:reprojectlayer', parameter)['OUTPUT']
-            QgsProject.instance().addMapLayer(aoi,False)
+            else:
+                aoi = processing.run("native:savefeatures", {'INPUT':aoi,'OUTPUT':aoi_tempfile,'LAYER_NAME':'aoi','DATASOURCE_OPTIONS':'','LAYER_OPTIONS':''})['OUTPUT']
+            #QgsProject.instance().addMapLayer(aoi,False)
+
             # TODO: remove addMapLayer above?
             # create db object 
             oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password)
+            oq_args = {"database":database,"host":host,"port":port,"user":user,"password":password}
 
             # init report with AOI
-            self.report = report(aoi,template_path=self.CONFIG_PATH,feedback=None)
+            aoi_vlayer = QgsVectorLayer(aoi, "aoi", "ogr")
+            self.report = report(aoi_vlayer,template_path=self.CONFIG_PATH,feedback=None)
 
             # connect trigger to method to run once all geoprocessing is done
             # QgsApplication.taskManager().allTasksFinished.connect(self.generate_report)
@@ -476,12 +480,11 @@ class DissectAlg(QgsProcessingAlgorithm):
 
                             #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
                             feedback.pushInfo('--- ' + str(layer_title) + ' ---')
-                            features = aoi.getFeatures()
                             logging.debug(f'Starting task for {layer_title}')
                             if location == 'BCGW':
-                                task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oq_helper,layer_table)
+                                task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback=None,oracle_helper_obj=oq_helper,layer_table=layer_table)
                             else:
-                                task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oracle_helper_obj=None,layer_table=layer_table)
+                                task = clipVectorTask(aoi,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback=None,oracle_helper_obj=None,layer_table=layer_table)
                             # task.run() # only do this if you want to bypass taskManager
                             self.tasks.append(task)
                         else:
@@ -1014,7 +1017,7 @@ class  clipVectorTask(QgsTask):
     def __init__(self,clip_feature,key,location,layer_subgroup,layer_title,layer_sql,summary_fields,feedback,oracle_helper_obj=None,layer_table=None):
         super().__init__(layer_title,QgsTask.CanCancel)
         import ptvsd
-        self.aoi = clip_feature
+        self.aoi = QgsVectorLayer(clip_feature, layer_title, "ogr")
         self.location = location
         self.layer_title = layer_title
         self.layer_sql = layer_sql
@@ -1052,6 +1055,8 @@ class  clipVectorTask(QgsTask):
         self.OUTPUT = result
         return True
     def process_file_vector(self):
+        import ptvsd
+        ptvsd.debug_this_thread()
         rlayer = None
         vlayer = None
         result = None
@@ -1180,7 +1185,7 @@ class  clipVectorTask(QgsTask):
                             "layer_subgroup":self.layer_subgroup,
                             "summary_fields":self.summary_fields,
                             "key":self.key,
-                            "result":self.OUTPUT})
+                            "result":self.OUTPUT.clone()})
         else:
             QgsMessageLog.logMessage(
                     f'Clip file vectorlayer {self.description()} Exception: {self.exception}',
