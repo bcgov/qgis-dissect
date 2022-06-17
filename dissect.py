@@ -1043,7 +1043,8 @@ class  clipVectorTask(QgsTask):
             if self.location == 'BCGW':
                 results.append(self.process_oracle())
             elif os.path.exists(self.location):
-                results.append(self.process_file_vector())
+                process_result = self.process_file_vector()
+                results.append(process_result)
             self.aoi.removeSelection()
         if len(results)>1:
             self.merge_results(results)
