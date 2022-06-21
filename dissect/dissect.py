@@ -110,7 +110,7 @@ class DissectAlg(QgsProcessingAlgorithm):
           
     def config(self):
         s = QgsSettings()
-        self.CONFIG_PATH = s.value('dissect/script_path')
+        self.CONFIG_PATH = s.value('dissect/root')
 
         # self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
         temppath = os.environ['TEMP']
@@ -132,9 +132,8 @@ class DissectAlg(QgsProcessingAlgorithm):
             enable_remote_debugging(self)
         except: 
             QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
-            
 
-        self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"protected.yml")
+        self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"config.yml")
         # Declare instance attributes
         self.actions = []
         self.menu = self.tr(u'&ThabReport')
@@ -213,7 +212,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         """      
         # get settings from QgsSettings (can set manual)
         s = QgsSettings()
-        settings_list = ['db', 'host', 'outpath', 'port', 'script_path', 'size', 'xls_config']
+        settings_list = ['db', 'host', 'outpath', 'port', 'root', 'size', 'xls_config']
         s.beginGroup('dissect')
         for key in settings_list:
             s.value(key,'')

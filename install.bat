@@ -9,7 +9,7 @@ if not exist %appdata%\QGIS\QGIS3\profiles\default\ (
     exit
 )
 if exist %appdata%\QGIS\QGIS3\profiles\default\ (
-    echo Installing Dissect ...
+    echo Preparing to install ...
     call python install.py
     echo Install complete
 )
