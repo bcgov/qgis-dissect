@@ -10,8 +10,11 @@ if not exist %appdata%\QGIS\QGIS3\profiles\default\ (
 )
 if exist %appdata%\QGIS\QGIS3\profiles\default\ (
     echo Preparing to install ...
-    call python install.py
-    echo Install complete
+    call python install.py &&(
+        echo Install complete
+        ) || (
+        echo Install failed. Run install.py from the QGIS Python console.
+        ) 
 )
-timeout /t 5
+timeout /t 10
 
