@@ -111,8 +111,6 @@ class DissectAlg(QgsProcessingAlgorithm):
     def config(self):
         s = QgsSettings()
         self.CONFIG_PATH = s.value('dissect/root')
-
-        # self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
         temppath = os.environ['TEMP']
 
         try:
@@ -134,11 +132,9 @@ class DissectAlg(QgsProcessingAlgorithm):
             QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
 
         self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"config.yml")
-        # Declare instance attributes
-        self.actions = []
-        self.menu = self.tr(u'&ThabReport')
         self.protected_tables = self.get_protected_tables(self.SECURE_TABLES_CONFIG)
-               
+
+        # Declare instance attributes      
         self.tool_map_layers = []
         self.failed_layers =[]
 
@@ -201,10 +197,14 @@ class DissectAlg(QgsProcessingAlgorithm):
         should provide a basic description about what the algorithm does and the
         parameters and outputs associated with it..
         """
-        return self.tr("dissect")
+        return self.tr("""
+        Finds overlapping features within interest layers and produces a summary report.
+        Select an area of interest (and choose to use 'selected features only' if desired).
+        Add your database credentials (+). Give the configuration a name and enter username and password. This login will be stored in an encrypted file within your QGIS profile.
+        If desired, check 'Add overlapping interests to map' to have intersecting features added in QGIS (including all original attributes).
+        Advanced Parameters include setting the interest configuration file and database settings. Default values for these parameters can be set in Options/Advanced/dissect.
+        """)
         
-   
-
     def initAlgorithm(self, config=None):
         """
         Here we define the inputs and output of the algorithm, along
@@ -219,7 +219,8 @@ class DissectAlg(QgsProcessingAlgorithm):
         
         outpath = s.value('outpath')
         if outpath != '':
-            outfile = outpath+'report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+            outpath = os.environ['TEMP']
+            outfile = outpath+'\\report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
         else:
             outfile = ''
         
@@ -232,7 +233,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         )
         xl_param = QgsProcessingParameterFile(
                     name = self.XLS_CONFIG_IN,
-                    description = self.tr('Input .xlsx coniguration file'),
+                    description = self.tr('Input .xlsx configuration file'),
                     optional = False,
                     extension = "xlsx",
                     defaultValue = s.value('xls_config')
