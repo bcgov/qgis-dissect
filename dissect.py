@@ -52,7 +52,8 @@ from qgis.core import (QgsProcessing,
                        Qgis,
                        QgsApplication,
                        QgsAuthManager,
-                       QgsAuthMethodConfig
+                       QgsAuthMethodConfig,
+                       QgsSettings
                        )
 
 from qgis import processing
@@ -108,7 +109,10 @@ class DissectAlg(QgsProcessingAlgorithm):
     ADD_INTERESTS = 'ADD_INTERESTS'
           
     def config(self):
-        self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
+        s = QgsSettings()
+        self.CONFIG_PATH = s.value('dissect/script_path')
+
+        # self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
         temppath = os.environ['TEMP']
 
         try:
@@ -207,27 +211,18 @@ class DissectAlg(QgsProcessingAlgorithm):
         Here we define the inputs and output of the algorithm, along
         with some other properties.
         """      
-        if 'QENV_DB' not in os.environ:
-            db = ''
+        # get settings from QgsSettings (can set manual)
+        s = QgsSettings()
+        settings_list = ['db', 'host', 'outpath', 'port', 'script_path', 'size', 'xls_config']
+        s.beginGroup('dissect')
+        for key in settings_list:
+            s.value(key,'')
+        
+        outpath = s.value('outpath')
+        if outpath != '':
+            outfile = outpath+'report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
         else:
-            db = os.environ['QENV_DB']
-        if 'QENV_HOST' not in os.environ:
-            host = ''
-        else:
-            host = os.environ['QENV_HOST']
-        if 'QENV_PORT' not in os.environ:
-            port = ''
-        else:
-            port = os.environ['QENV_PORT']
-        if 'QENV_XLS_CONFIG' not in os.environ:
-            xls_config = ''
-        else:
-            xls_config = os.environ['QENV_XLS_CONFIG']
-        if 'QENV_OUT' not in os.environ:
             outfile = ''
-        else:
-            outfile = os.environ['QENV_OUT']+'report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
-
         
         self.addParameter(
             QgsProcessingParameterFeatureSource(
@@ -241,7 +236,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                     description = self.tr('Input .xlsx coniguration file'),
                     optional = False,
                     extension = "xlsx",
-                    defaultValue = xls_config  
+                    defaultValue = s.value('xls_config')
                     )  
         xl_param.setFlags(xl_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(xl_param)
@@ -249,7 +244,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         db_param = QgsProcessingParameterString(
                     self.DATABASE,
                     self.tr('Database'),
-                    defaultValue = db,
+                    defaultValue = s.value('db'),
                     optional = True
                     )
         db_param.setFlags(db_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
@@ -258,7 +253,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         host_param = QgsProcessingParameterString(
                     self.HOST,
                     self.tr('Host'),
-                    defaultValue = host,
+                    defaultValue = s.value('host'),
                     optional = True
                     )
         host_param.setFlags(host_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
@@ -267,7 +262,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         port_param = QgsProcessingParameterString(
                     self.PORT,
                     self.tr('Port'),
-                    defaultValue = port,
+                    defaultValue = s.value('port'),
                     optional = True
                     )
         port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
@@ -297,6 +292,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                 defaultValue = False
             )
         )
+        s.endGroup()
 
 
     def parse_config(self,xlsx):
