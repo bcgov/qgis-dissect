@@ -3,19 +3,20 @@
 A plugin reporting overlapping GIS datasets
 
 ## Installation
-1. Place the contents of this repo in QGIS processing scripts folder. 
-    - For BC Gov employees working on the GTS, this path will be `C:\Users\<USERNAME>\AppData\Roaming\QGIS\QGIS3\profiles\default\processing\scripts\`
-2. Set the environment variable `QENV_CONFIG_PATH` to the repo folder
-    - In QGIS: Settings --> Options --> System --> Environment, and then add `QENV_CONFIG_PATH`
-3. Configure `data_config.xlsx` as desired. TODO - add more explanation.
+1. Download repo
+2. Copy `example_config.yml` to the root folder and rename to `config.yml`
+3. Modify optional default parameters as desired
+4. Run `install.py`:
+    - Open QGIS and run the script from the Python Console (`CTRL+ALT+P`): 1) Show editor, 2) Open script, 3) Run script
+    ![image](https://user-images.githubusercontent.com/38586679/175171494-0aa1e977-ed1f-49f0-b31d-d0f33d5deee0.png)
+    - if you have a standalone QGIS build, simply run `install.bat` (and change `bcgov_qgis_boiler_plate` in `install.py` to your package)
+5. Configure `data_config.xlsx` as desired. 
+<!-- TODO - add more explanation on data config. -->
 
 ### Optional additional configuration steps
-4. Create additional environment variables to populate default script parameters:
-    - Oracle database name and login: `QENV_DB`, `QENV_DB_USER`, `QENV_DB_PASS`
-    - Data configuration file path: `QENV_XLS_CONFIG`
-    - Report output folder path: `QENV_OUT`
-5. Modify html `templates` for output reports
-6. Configure protected tables in `protected.yml`
+1. Modify default parameters in `config.yml` - then run `install.bat/py` again
+2. Modify html `templates` for output reports
+3. Configure protected tables in `protected.yml`
     - Protected tables will provide only intersect summary stats - geometries will not be exported.
 
 ## Usage
