@@ -1,5 +1,6 @@
 application:
   root: # setting defaults to repo root dir if undefined here
+  # WARNING - it may be necessary to manually populate root with an escaped string
 
 # OPTIONAL define default parameters
 default_config:
