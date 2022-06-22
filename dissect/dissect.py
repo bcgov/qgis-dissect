@@ -84,6 +84,7 @@ def enable_remote_debugging(self):
         logging.debug('Attached remote Debug for Visual Studio')
 
     except Exception as e:
+        logging.debug('Remote debug failed to attach')
         exc_type, exc_value, exc_traceback = sys.exc_info()
         format_exception = traceback.format_exception(exc_type, exc_value, exc_traceback)
         QgsMessageLog.logMessage(str(e), MESSAGE_CATEGORY, Qgis.Critical)        
@@ -211,6 +212,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         with some other properties.
         """      
         # get settings from QgsSettings (can set manual)
+        logging.debug('Initializing script')
         s = QgsSettings()
         settings_list = ['db', 'host', 'outpath', 'port', 'root', 'size', 'xls_config']
         s.beginGroup('dissect')
@@ -293,6 +295,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             )
         )
         s.endGroup()
+        logging.debug('Initialization complete')
 
 
     def parse_config(self,xlsx):
