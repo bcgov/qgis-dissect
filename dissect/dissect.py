@@ -52,7 +52,8 @@ from qgis.core import (QgsProcessing,
                        Qgis,
                        QgsApplication,
                        QgsAuthManager,
-                       QgsAuthMethodConfig
+                       QgsAuthMethodConfig,
+                       QgsSettings
                        )
 
 from qgis import processing
@@ -108,7 +109,8 @@ class DissectAlg(QgsProcessingAlgorithm):
     ADD_INTERESTS = 'ADD_INTERESTS'
           
     def config(self):
-        self.CONFIG_PATH = os.environ['QENV_CONFIG_PATH']
+        s = QgsSettings()
+        self.CONFIG_PATH = s.value('dissect/root')
         temppath = os.environ['TEMP']
 
         try:
@@ -128,14 +130,11 @@ class DissectAlg(QgsProcessingAlgorithm):
             enable_remote_debugging(self)
         except: 
             QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
-            
 
-        self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"protected.yml")
-        # Declare instance attributes
-        self.actions = []
-        self.menu = self.tr(u'&ThabReport')
+        self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"config.yml")
         self.protected_tables = self.get_protected_tables(self.SECURE_TABLES_CONFIG)
-               
+
+        # Declare instance attributes      
         self.tool_map_layers = []
         self.failed_layers =[]
 
@@ -198,36 +197,32 @@ class DissectAlg(QgsProcessingAlgorithm):
         should provide a basic description about what the algorithm does and the
         parameters and outputs associated with it..
         """
-        return self.tr("dissect")
+        return self.tr("""
+        Finds overlapping features within interest layers and produces a summary report.
+        Select an area of interest (and choose to use 'selected features only' if desired).
+        Add your database credentials (+). Give the configuration a name and enter username and password. This login will be stored in an encrypted file within your QGIS profile.
+        If desired, check 'Add overlapping interests to map' to have intersecting features added in QGIS (including all original attributes).
+        Advanced Parameters include setting the interest configuration file and database settings. Default values for these parameters can be set in Options/Advanced/dissect.
+        """)
         
-   
-
     def initAlgorithm(self, config=None):
         """
         Here we define the inputs and output of the algorithm, along
         with some other properties.
         """      
-        if 'QENV_DB' not in os.environ:
-            db = ''
+        # get settings from QgsSettings (can set manual)
+        s = QgsSettings()
+        settings_list = ['db', 'host', 'outpath', 'port', 'root', 'size', 'xls_config']
+        s.beginGroup('dissect')
+        for key in settings_list:
+            s.value(key,'')
+        
+        outpath = s.value('outpath')
+        if outpath != '':
+            outpath = os.environ['TEMP']
+            outfile = outpath+'\\report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
         else:
-            db = os.environ['QENV_DB']
-        if 'QENV_HOST' not in os.environ:
-            host = ''
-        else:
-            host = os.environ['QENV_HOST']
-        if 'QENV_PORT' not in os.environ:
-            port = ''
-        else:
-            port = os.environ['QENV_PORT']
-        if 'QENV_XLS_CONFIG' not in os.environ:
-            xls_config = ''
-        else:
-            xls_config = os.environ['QENV_XLS_CONFIG']
-        if 'QENV_OUT' not in os.environ:
             outfile = ''
-        else:
-            outfile = os.environ['QENV_OUT']+'report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
-
         
         self.addParameter(
             QgsProcessingParameterFeatureSource(
@@ -238,10 +233,10 @@ class DissectAlg(QgsProcessingAlgorithm):
         )
         xl_param = QgsProcessingParameterFile(
                     name = self.XLS_CONFIG_IN,
-                    description = self.tr('Input .xlsx coniguration file'),
+                    description = self.tr('Input .xlsx configuration file'),
                     optional = False,
                     extension = "xlsx",
-                    defaultValue = xls_config  
+                    defaultValue = s.value('xls_config')
                     )  
         xl_param.setFlags(xl_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
         self.addParameter(xl_param)
@@ -249,7 +244,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         db_param = QgsProcessingParameterString(
                     self.DATABASE,
                     self.tr('Database'),
-                    defaultValue = db,
+                    defaultValue = s.value('db'),
                     optional = True
                     )
         db_param.setFlags(db_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
@@ -258,7 +253,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         host_param = QgsProcessingParameterString(
                     self.HOST,
                     self.tr('Host'),
-                    defaultValue = host,
+                    defaultValue = s.value('host'),
                     optional = True
                     )
         host_param.setFlags(host_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
@@ -267,7 +262,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         port_param = QgsProcessingParameterString(
                     self.PORT,
                     self.tr('Port'),
-                    defaultValue = port,
+                    defaultValue = s.value('port'),
                     optional = True
                     )
         port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
@@ -297,6 +292,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                 defaultValue = False
             )
         )
+        s.endGroup()
 
 
     def parse_config(self,xlsx):
