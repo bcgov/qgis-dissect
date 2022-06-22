@@ -539,15 +539,23 @@ class DissectAlg(QgsProcessingAlgorithm):
                                         elif file_extension in ['.shp','.kml','.kmz','.geojson']:
                                             file_location = location + location_sql
                                             vlayer = QgsVectorLayer(file_location, layer_title, "ogr")
-                                            assert vlayer.isValid(),f"Failed to add {layer_title}:{filename}"
+                                            if vlayer.isValid() == False:
+                                                feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
+                                                self.failed_layers.append(layer_title)
+                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid input')
                                         elif file_extension in ['.tif']:
                                             rlayer = QgsRasterLayer(location,layer_title)
-                                            assert rlayer.isValid(),f"Failed to add {layer_title}:{filename}"
+                                            if rlayer.isValid() == False:
+                                                feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
+                                                self.failed_layers.append(layer_title)
+                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid raster input')
                                         elif file_extension in ['.gdb','gpkg']:
                                             ogr_string = f"{location}|layername={layer_table}{location_sql}"
                                             vlayer = QgsVectorLayer(ogr_string, layer_title, "ogr")
                                         else:
                                             feedback.pushInfo(f"No loading function for {layer_title}: {location}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path or input type')
                                         if vlayer is not None:
                                             logging.debug(f'{layer_title} is vector layer, starting processing')
                                             try:
