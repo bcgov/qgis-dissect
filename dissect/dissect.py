@@ -878,15 +878,15 @@ class report:
             else:
                 field_string=''
         
+        if (d['count']>0):
+            interest['value'] = d['count']
+            interest['count'] = d['count']
         if (d['area']>0):
             interest['value'] = d['area']/10000
             interest['unit'] = 'ha'
         elif (d['length']>0):
             interest['value'] = d['length']
             interest['unit'] = 'm'
-        if (d['count']>0):
-            interest['value'] = d['count']
-            interest['count'] = d['count']
         else:
             interest['count']=0
         if intersected_layer.featureCount() > 0:
