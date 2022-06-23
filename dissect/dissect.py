@@ -883,7 +883,8 @@ class report:
         elif (d['length']>0):
             interest['value'] = d['length']
             interest['unit'] = 'm'
-        if 'count' in d.keys():
+        if (d['count']>0):
+            interest['value'] = d['count']
             interest['count'] = d['count']
         else:
             interest['count']=0
