@@ -1,9 +1,3 @@
-# qgis-boilerplate
-bcgov_qgis_boiler_plate.py
-
-# config
-config.yml
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
