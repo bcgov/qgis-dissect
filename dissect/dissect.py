@@ -71,20 +71,34 @@ import logging
 
 MESSAGE_CATEGORY = 'Messages'
 
+try:
+    temppath = os.environ['TEMP']
+    logfile = os.path.join(temppath, 'dissect.log')
+    logger = logging.getLogger('dev')
+    # logger.handlers.pop(0)
+    logger.setLevel(logging.DEBUG)
+    fileHandler = logging.FileHandler(logfile)
+    fileHandler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+    fileHandler.setFormatter(formatter)
+    logger.addHandler(fileHandler)
+except:
+    pass
+
 def enable_remote_debugging(self):
     try:
         import ptvsd
         if ptvsd.is_attached():
             QgsMessageLog.logMessage("Remote Debug for Visual Studio is already active", MESSAGE_CATEGORY, Qgis.Info)
-            logging.debug('Remote Debug for Visual Studio already attached')
+            logger.debug('Remote Debug for Visual Studio already attached')
             return
         # ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, 'ptvsd_log'))
         ptvsd.enable_attach(address=('localhost', 5678))
         QgsMessageLog.logMessage("Attached remote Debug for Visual Studio", MESSAGE_CATEGORY, Qgis.Info)
-        logging.debug('Attached remote Debug for Visual Studio')
+        logger.debug('Attached remote Debug for Visual Studio')
 
     except Exception as e:
-        logging.debug('Remote debug failed to attach')
+        logger.debug('Remote debug failed to attach')
         exc_type, exc_value, exc_traceback = sys.exc_info()
         format_exception = traceback.format_exception(exc_type, exc_value, exc_traceback)
         QgsMessageLog.logMessage(str(e), MESSAGE_CATEGORY, Qgis.Critical)        
@@ -112,20 +126,8 @@ class DissectAlg(QgsProcessingAlgorithm):
     def config(self):
         s = QgsSettings()
         self.CONFIG_PATH = s.value('dissect/root')
-        temppath = os.environ['TEMP']
-
-        try:
-            logging.basicConfig(
-            filename = os.path.join(temppath, 'dissect.log'),
-            # filemode = 'w',
-            encoding='utf-8',
-            level=logging.DEBUG,
-            format = '%(name)s - %(levelname)s - %(message)s'
-            )
-        except:
-            feedback.pushInfo("Could not enable logging")
-        
-        logging.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
+       
+        logger.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
 
         try:
             enable_remote_debugging(self)
@@ -212,7 +214,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         with some other properties.
         """      
         # get settings from QgsSettings (can set manual)
-        logging.debug('Initializing script')
+        logger.debug('Initializing script')
         s = QgsSettings()
         settings_list = ['db', 'host', 'outpath', 'port', 'root', 'size', 'xls_config']
         s.beginGroup('dissect')
@@ -295,7 +297,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             )
         )
         s.endGroup()
-        logging.debug('Initialization complete')
+        logger.debug('Initialization complete')
 
 
     def parse_config(self,xlsx):
@@ -328,7 +330,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             feedback.pushInfo("Debug for VS not enabled")
 
         self.config()
-        logging.debug('Alg class initialized')
+        logger.debug('Alg class initialized')
 
 
         # Retrieve the feature source and sink. The 'dest_id' variable is used
@@ -408,7 +410,7 @@ class DissectAlg(QgsProcessingAlgorithm):
 
             # creates list of all fc to compare aoi too
             parsed_input = self.parse_config(xls_file)
-            logging.debug(f'Config xlsx parsed successfully ({xls_file})')
+            logger.debug(f'Config xlsx parsed successfully ({xls_file})')
 
             ## TODO set up progress bar
             # progress.setValue(5)
@@ -423,18 +425,18 @@ class DissectAlg(QgsProcessingAlgorithm):
             i = (90 / estimated_count)
             feedback.pushInfo(f"Evaluating {estimated_count} interests")
             for tab_dict in parsed_input:
-                logging.debug(f'Processing tab_dict: {tab_dict}')
+                logger.debug(f'Processing tab_dict: {tab_dict}')
                 if feedback.isCanceled():
                     feedback.pushInfo('Process cancelled by user.')
                     return {}
                 for key in tab_dict:
-                    logging.debug(f'Processing key: {key}')
+                    logger.debug(f'Processing key: {key}')
                     if feedback.isCanceled():
                         feedback.pushInfo('Process cancelled by user.')
                         return {}
                     tab = tab_dict[key]
                     for dic in tab:
-                        logging.debug(f'Processing dic: {dic}')
+                        logger.debug(f'Processing dic: {dic}')
                         if feedback.isCanceled():
                             feedback.pushInfo('Process cancelled by user.')
                             return {}
@@ -442,7 +444,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                         layer_title = dic['Layer Name']
                         if layer_title is not None:
                             layer_title = layer_title.strip()
-                            logging.debug(f'Processing layer: {layer_title}')
+                            logger.debug(f'Processing layer: {layer_title}')
                             layer_subgroup = dic['Layer Group Heading']
                             layer_table = dic['Feature Class Name']
                             if layer_table is not None:
@@ -457,16 +459,16 @@ class DissectAlg(QgsProcessingAlgorithm):
                             feature_layer_lst = [] # build empty layer list for each obj to be merged at end of unique feature cycle
                             #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
                             feedback.pushInfo('--- ' + str(layer_title) + ' ---')
-                            logging.debug(f'{layer_title} location: {location}')
+                            logger.debug(f'{layer_title} location: {location}')
                             features = aoi.getFeatures()
                             for item in features: # iterate through each item in aoi
-                                logging.debug(f'{layer_title} - feature item {item}')
+                                logger.debug(f'{layer_title} - feature item {item}')
                                 if feedback.isCanceled():
                                     feedback.pushInfo('Process cancelled by user.')
                                     return {}
                                 aoi.select(item.id())
                                 if (location == 'BCGW'):
-                                    logging.debug(f'{layer_title} - is in BCGW')
+                                    logger.debug(f'{layer_title} - is in BCGW')
                                     assert layer_table is not None
                                     # get overlapping features
                                     has_table = oq_helper.has_table(layer_table)
@@ -475,7 +477,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                                     else:
                                         has_spatial_rows = False
                                     if has_table == True and has_spatial_rows == True:
-                                        logging.debug(f'{layer_title} - table and rows confirmed')
+                                        logger.debug(f'{layer_title} - table and rows confirmed')
                                         # get features from bbox
                                         selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
                                         try:
@@ -484,17 +486,17 @@ class DissectAlg(QgsProcessingAlgorithm):
                                                 result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
                                                 if result.featureCount()>0:
                                                     feedback.pushInfo(f"{layer_title} with ({result.featureCount()}) overlapping features")
-                                                    logging.debug(f"{layer_title} returned with ({result.featureCount()}) overlapping features")
+                                                    logger.debug(f"{layer_title} returned with ({result.featureCount()}) overlapping features")
                                             else:
                                                 # return layer with no features
                                                 result = selected_features
-                                                logging.debug(f"{layer_title} returned no overlapping features")
+                                                logger.debug(f"{layer_title} returned no overlapping features")
                                         except:
                                             try:
-                                                logging.debug(f"{layer_title} fixing geometry")
+                                                logger.debug(f"{layer_title} fixing geometry")
                                                 f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
                                                 result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                logging.debug(f"{layer_title} geometry fixed and clipped")
+                                                logger.debug(f"{layer_title} geometry fixed and clipped")
                                             except:
                                                 self.failed_layers.append(layer_title)
                                                 report_obj.add_failed(layer_title, layer_subgroup, key, comment='BCGW - data/geometry issue')
@@ -503,21 +505,21 @@ class DissectAlg(QgsProcessingAlgorithm):
                                             # feedback.pushInfo(f"result type {type(result)}")
                                             # feedback.pushInfo(f"clip result count: {result.featureCount()}")
                                             feature_layer_lst.append(result)
-                                            logging.debug(f"{layer_title} appended to feature_layer_lst")
+                                            logger.debug(f"{layer_title} appended to feature_layer_lst")
                                     else:
                                         if has_table:
                                             feedback.pushInfo(f"No data in table: BCGW {layer_table}")
                                             self.failed_layers.append(layer_title)
                                             report_obj.add_failed(layer_title, layer_subgroup, key, comment='No data in table: BCGW')
-                                            logging.debug(f"{layer_title} contains no rows")
+                                            logger.debug(f"{layer_title} contains no rows")
                                         else:
                                             feedback.pushInfo(f"Can not access: BCGW {layer_table}")
                                             self.failed_layers.append(layer_title)
                                             report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not access on BCGW')
-                                            logging.debug(f"{layer_title} could not be accessed")
+                                            logger.debug(f"{layer_title} could not be accessed")
                                 elif (location is not None):
                                     if os.path.exists(location):
-                                        logging.debug(f'{layer_title} exists, starting processing')
+                                        logger.debug(f'{layer_title} exists, starting processing')
                                         rlayer = None
                                         vlayer = None
                                         filename, file_extension = os.path.splitext(location)
@@ -560,14 +562,14 @@ class DissectAlg(QgsProcessingAlgorithm):
                                             self.failed_layers.append(layer_title)
                                             report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path or input type')
                                         if vlayer is not None:
-                                            logging.debug(f'{layer_title} is vector layer, starting processing')
+                                            logger.debug(f'{layer_title} is vector layer, starting processing')
                                             try:
                                                 if vlayer.isValid():
                                                     vlayer.setSubsetString(layer_sql)
                                                     if vlayer.featureCount()>0:
-                                                        logging.debug(f'{layer_title} has valid geometry')
+                                                        logger.debug(f'{layer_title} has valid geometry')
                                                         result = processing.run("native:clip", {'INPUT':vlayer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                        logging.debug(f'{layer_title} clipped')
+                                                        logger.debug(f'{layer_title} clipped')
                                                     else:
                                                         feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
                                                 else:
@@ -575,17 +577,17 @@ class DissectAlg(QgsProcessingAlgorithm):
                                             except:
                                                 vlayer.setSubsetString(layer_sql)
                                                 if vlayer.featureCount()>0:
-                                                    logging.debug(f'{layer_title} has invalid geometry, fixing...')
+                                                    logger.debug(f'{layer_title} has invalid geometry, fixing...')
                                                     f_layer = processing.run("native:fixgeometries", {'INPUT':vlayer,'OUTPUT':'memory:{layer_title}fix'})['OUTPUT']
-                                                    logging.debug(f'{layer_title} geo fixed')
+                                                    logger.debug(f'{layer_title} geo fixed')
                                                     result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                    logging.debug(f'{layer_title} clipped')
+                                                    logger.debug(f'{layer_title} clipped')
                                                 else:
                                                     feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
                                             finally:
                                                 if result is not None:
                                                     feature_layer_lst.append(result)
-                                                    logging.debug(f'{layer_title} added to feature_layer_lst')
+                                                    logger.debug(f'{layer_title} added to feature_layer_lst')
                                                     feedback.pushInfo(f"{layer_title}: {result.featureCount()} overlapping features found")
                                         elif rlayer is not None:
                                             enable_raster = False
@@ -672,7 +674,7 @@ class DissectAlg(QgsProcessingAlgorithm):
 
                             # TODO understand this - it is only for BCGW? (or raster) why?
                             if len(feature_layer_lst) > 0:
-                                logging.debug(f'{layer_title} Merging feature_layer_lst, length: {len(feature_layer_lst)}')
+                                logger.debug(f'{layer_title} Merging feature_layer_lst, length: {len(feature_layer_lst)}')
                                 try:
                                     if len(feature_layer_lst)>1:
                                         result = processing.run("native:mergevectorlayers", {'LAYERS':feature_layer_lst, 'CRS':QgsCoordinateReferenceSystem('EPSG:3005'),'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
@@ -699,20 +701,20 @@ class DissectAlg(QgsProcessingAlgorithm):
                             try:
                                 delta_time = round(time.time()-lyr_start,1)
                                 feedback.pushInfo(f"{layer_title}: {delta_time} seconds")
-                                logging.debug(f'{layer_title}: {delta_time} seconds to process')
+                                logger.debug(f'{layer_title}: {delta_time} seconds to process')
                                 if result is not None:      
                                     if result.featureCount()>0:
                                         if self.add_interests is True:
-                                            logging.debug(f'{layer_title}: adding to map')
+                                            logger.debug(f'{layer_title}: adding to map')
                                             QgsProject.instance().addMapLayer(result)
                                             self.tool_map_layers.append(result.id())
-                                            logging.debug(f'{layer_title}: added to map')
+                                            logger.debug(f'{layer_title}: added to map')
                                     if layer_table not in self.protected_tables:
                                         report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=False)
-                                        logging.debug(f'{layer_title}: added to report (non-secure)')
+                                        logger.debug(f'{layer_title}: added to report (non-secure)')
                                     else:
                                         report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=True)
-                                        logging.debug(f'{layer_title}: added to report (secure)')
+                                        logger.debug(f'{layer_title}: added to report (secure)')
                                 ## TODO progress bar
                                 # p = progress.value()
                                 # progress.setValue(p+i)
@@ -724,12 +726,12 @@ class DissectAlg(QgsProcessingAlgorithm):
 
             # write report
             result = report_obj.report(output)
-            logging.debug('Report produced')
+            logger.debug('Report produced')
             # clean up
             QgsProject.instance().removeMapLayer(aoi.id())
             report_obj = None
             del oq_helper
-            logging.debug('Clean up complete')
+            logger.debug('Clean up complete')
             feedback.pushInfo(f"Failed layers: {self.failed_layers}")
             result_msg = {}
             result_msg[self.OUTPUT] = output
@@ -823,7 +825,7 @@ class report:
         interest = {'name':intersected_layer.name(),
             'group':group,
             'subgroup':subgroup}
-        logging.debug(f'Building report: adding interest {interest}')
+        logger.debug(f'Building report: adding interest {interest}')
         fieldNames = [field.name() for field in intersected_layer.fields()]
         summary_dict = {}
         d = {'count':0,'length':0.0,'area':0.0}
@@ -892,23 +894,23 @@ class report:
             if secure is True:
                 interest['geojson'] = None   
             else: 
-                logging.debug(f'Exporting {intersected_layer} to geojson')
+                logger.debug(f'Exporting {intersected_layer} to geojson')
                 interest['geojson'] = self.vectorlayer_to_geojson(intersected_layer)
-                logging.debug('Exported to geojson, geojson returned')
+                logger.debug('Exported to geojson, geojson returned')
         else:
             interest['geojson'] = None
             interest['field_summary'] = []
         self.interests.append(interest)
-        logging.debug('Interest appended to interests')
+        logger.debug('Interest appended to interests')
     def vectorlayer_to_geojson(self,layer):
         '''Export QgsVectorlayer to temp geojson'''
         file_name = layer.name().replace(' ','_').replace('.','_') + ".geojson"
         file_name = file_name.replace('/','_')
         file_name = file_name.replace('\\','_')
-        logging.debug('V2GEOJSON: geojson name built')
+        logger.debug('V2GEOJSON: geojson name built')
         temp_path = os.environ['TEMP']
         geojson_path = os.path.join(temp_path,file_name)
-        logging.debug('V2GEOJSON: geojson path built')
+        logger.debug('V2GEOJSON: geojson path built')
         destcrs = QgsCoordinateReferenceSystem("EPSG:4326")
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.driverName = "GeoJSON"
@@ -917,26 +919,26 @@ class report:
         options.ct = QgsCoordinateTransform(layer.sourceCrs() ,destcrs,context)
         if layer.selectedFeatureCount()>0:
             options.onlySelectedFeatures = True
-            logging.debug('V2GEOJSON: about to write (selected feat only)')
+            logger.debug('V2GEOJSON: about to write (selected feat only)')
             # TODO use .writeAsVectorFormatV3
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
             # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
             # error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
-            logging.debug('V2GEOJSON: json written')
+            logger.debug('V2GEOJSON: json written')
         else:
-            logging.debug('V2GEOJSON: about to write')
+            logger.debug('V2GEOJSON: about to write')
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
             # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
             #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON")
-            logging.debug('V2GEOJSON: json written')
+            logger.debug('V2GEOJSON: json written')
 
         assert error[0] == 0, 'error not equal to 0'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
         # TODO get feedback working within report class
         # self.fb.pushInfo(f"export json --> {geojson_path}")
-        logging.debug('V2GEOJSON: assert passed, about to load json')
+        logger.debug('V2GEOJSON: assert passed, about to load json')
         geojson = self.load_geojson(geojson_path)
-        logging.debug('V2GEOJSON: json loaded')
+        logger.debug('V2GEOJSON: json loaded')
         return geojson
 
     def load_geojson(self,file):
@@ -947,14 +949,14 @@ class report:
 
     def add_failed(self, layer_title, subgroup, group, comment=None):
         ''' add a failed interest to the report'''
-        logging.debug(f"REPORT add failed layer: {layer_title}")
+        logger.debug(f"REPORT add failed layer: {layer_title}")
         failedLyr = {'name':layer_title,
             'group':group,
             'subgroup':subgroup,
             'comment':comment}   
 
         self.failedLyrs.append(failedLyr)
-        logging.debug('Interest appended to failed layers')
+        logger.debug('Interest appended to failed layers')
 
     def report(self,outfile):
         """ Build html report based on self.interests --> html file
@@ -980,14 +982,14 @@ class report:
         outpath = os.path.dirname(outfile)
         # Check whether the specified path exists or not
         pathExist = os.path.exists(outpath)
-        logging.debug(f'Output path {outpath} exists: {pathExist}')
+        logger.debug(f'Output path {outpath} exists: {pathExist}')
         if not pathExist:      
             # Create a new directory because it does not exist 
             os.makedirs(outpath)
-            logging.debug('Outpath created')
+            logger.debug('Outpath created')
         with open(outfile, 'w') as f:
             f.write(ahtml)    
-        logging.debug(f'Report written to file ({(os.path.getsize(outfile)/1000):.0f} KB)')
+        logger.debug(f'Report written to file ({(os.path.getsize(outfile)/1000):.0f} KB)')
         #the last hurah!
         # arcpy.SetParameterAsText(1, outfile)
         env = None
@@ -1024,7 +1026,7 @@ class oracle_pyqgis:
     def open_db_connection(self):
         ''' open_db_connection creates and opens a db connection to the oracle database
         '''
-        logging.debug('Attempting db connection')
+        logger.debug('Attempting db connection')
         driver ="QOCISPATIAL"
         conn_name = "bcgw_conn"
         qdb = QSqlDatabase()
@@ -1033,7 +1035,7 @@ class oracle_pyqgis:
         self.db.setUserName(self.user_name) 
         self.db.setPassword(self.user_pass) 
         db_open = self.db.open()
-        logging.debug(f'db connection status: {db_open}')
+        logger.debug(f'db connection status: {db_open}')
         return db_open
     
     def close_db_connection(self):
@@ -1041,7 +1043,7 @@ class oracle_pyqgis:
         '''
         if self.db.isOpen():
             self.db.close()
-            logging.debug(f'db connection closed')
+            logger.debug(f'db connection closed')
     
     def check_connection(self):
         if not self.db.isOpen():
