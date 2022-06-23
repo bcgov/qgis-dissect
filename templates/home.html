@@ -10,6 +10,12 @@
                   <label class="custom-control-label" for="{{ i['name']|replace(' ','_') }}_switch">Draw on map</label>
                 </div>
                 {% endif %}
+                {% if i['secure']%}
+                <div class="custom-control custom-switch">
+                  <input type="checkbox" class="custom-control-input" id="{{ i['name']|replace(' ','_') }}_switch" disabled>
+                  <label class="custom-control-label" for="{{ i['name']|replace(' ','_') }}_switch">🔒 Draw on map</label>
+                </div>
+                {% endif %}
               </div>
               <h3><p class="article-title">{{ i['name'] }}</p></h3>
               {% if i['value'] is defined %}

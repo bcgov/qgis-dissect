@@ -824,7 +824,8 @@ class report:
         
         interest = {'name':intersected_layer.name(),
             'group':group,
-            'subgroup':subgroup}
+            'subgroup':subgroup,
+            'secure': secure}
         logger.debug(f'Building report: adding interest {interest}')
         fieldNames = [field.name() for field in intersected_layer.fields()]
         summary_dict = {}
