@@ -1,16 +1,19 @@
-#-----------------------------------------------------------
-# Copyright (C) 2015 Martin Dobias
-#-----------------------------------------------------------
-# Licensed under the terms of GNU GPL 2
-#
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 2 of the License, or
-# (at your option) any later version.
-#---------------------------------------------------------------------
+# -*- coding: utf-8 -*-
+
+"""
+***************************************************************************
+*                                                                         *
+*   This program is free software; you can redistribute it and/or modify  *
+*   it under the terms of the GNU General Public License as published by  *
+*   the Free Software Foundation; either version 2 of the License, or     *
+*   (at your option) any later version.                                   *
+*                                                                         *
+***************************************************************************
+"""
+
 import sys
 import os
-import gc
+import traceback
 
 import jinja2
 import json
@@ -32,6 +35,10 @@ from qgis.core import (QgsProcessing,
                        QgsProcessingParameterString,
                        QgsProcessingParameterFile,
                        QgsProcessingParameterFileDestination,
+                       QgsProcessingParameterAuthConfig,
+                       QgsProcessingParameterDefinition,
+                       QgsProcessingParameterBoolean,
+                       QgsFeatureRequest,
                        QgsWkbTypes,
                        QgsCoordinateReferenceSystem,
                        QgsCoordinateTransform,
@@ -42,7 +49,11 @@ from qgis.core import (QgsProcessing,
                        QgsDataSourceUri,
                        QgsProject,
                        QgsMessageLog,
-                       Qgis
+                       Qgis,
+                       QgsApplication,
+                       QgsAuthManager,
+                       QgsAuthMethodConfig,
+                       QgsSettings
                        )
 
 from qgis import processing
@@ -52,109 +63,242 @@ import time
 import yaml
 import re
 from PyQt5.QtWidgets import QAction, QMessageBox, QProgressBar,QDockWidget,QTabWidget
-from .thab_dialog import ThabReportDialog
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
 
-#from .resources import *
-def classFactory(iface):
-    return ThabReport(iface)
+# dev only
+import logging
 
+MESSAGE_CATEGORY = 'Messages'
 
-class ThabReport:
-    PLUGIN_NAME = 'QGIS Report'
-    def __init__(self, iface):
-        self.iface = iface
-        config_path = r""
-        
-        self.SECURE_TABLES_CONFIG = os.path.join(config_path,"app.yml")
-        self.DATABASE_CONFIG_FILE = os.path.join(config_path,"app.yml")
-        self.DATABASE_CONFIG = yaml.safe_load(open(self.DATABASE_CONFIG_FILE,'r'))['database']
-        self.APP_ROOT = yaml.safe_load(open(self.DATABASE_CONFIG_FILE,'r'))['application']['root']
-        xls_file_name = yaml.safe_load(open(self.DATABASE_CONFIG_FILE,'r'))['data']
-        self.XLS_CONFIG = os.path.join(config_path,xls_file_name)
-        # Declare instance attributes
-        self.actions = []
-        self.menu = self.tr(u'&ThabReport')
+try:
+    temppath = os.environ['TEMP']
+    logfile = os.path.join(temppath, 'dissect.log')
+    logger = logging.getLogger('dev')
+    # logger.handlers.pop(0)
+    logger.setLevel(logging.DEBUG)
+    fileHandler = logging.FileHandler(logfile)
+    fileHandler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+    fileHandler.setFormatter(formatter)
+    logger.addHandler(fileHandler)
+except:
+    pass
+
+def enable_remote_debugging(self):
+    try:
+        import ptvsd
+        if ptvsd.is_attached():
+            QgsMessageLog.logMessage("Remote Debug for Visual Studio is already active", MESSAGE_CATEGORY, Qgis.Info)
+            logger.debug('Remote Debug for Visual Studio already attached')
+            return
+        # ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, 'ptvsd_log'))
+        ptvsd.enable_attach(address=('localhost', 5678))
+        QgsMessageLog.logMessage("Attached remote Debug for Visual Studio", MESSAGE_CATEGORY, Qgis.Info)
+        logger.debug('Attached remote Debug for Visual Studio')
+
+    except Exception as e:
+        logger.debug('Remote debug failed to attach')
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        format_exception = traceback.format_exception(exc_type, exc_value, exc_traceback)
+        QgsMessageLog.logMessage(str(e), MESSAGE_CATEGORY, Qgis.Critical)        
+        QgsMessageLog.logMessage(repr(format_exception[0]), MESSAGE_CATEGORY, Qgis.Critical)
+        QgsMessageLog.logMessage(repr(format_exception[1]), MESSAGE_CATEGORY, Qgis.Critical)
+        QgsMessageLog.logMessage(repr(format_exception[2]), MESSAGE_CATEGORY, Qgis.Critical)
+class DissectAlg(QgsProcessingAlgorithm):
+    """
+    Extending QgsProcessingAlgorithm class.
+    """
+
+    # Constants used to refer to parameters and outputs. They will be
+    # used when calling the algorithm from another algorithm, or when
+    # calling from the QGIS console.
+
+    AOI = 'AOI'
+    XLS_CONFIG_IN = 'XLS_CONFIG_IN'
+    DATABASE = 'DATABASE'
+    HOST = 'HOST'
+    PORT = 'PORT'
+    AUTH_CONFIG = 'AUTH_CONFIG'
+    OUTPUT = 'OUTPUT'
+    ADD_INTERESTS = 'ADD_INTERESTS'
+          
+    def config(self):
+        s = QgsSettings()
+        self.CONFIG_PATH = s.value('dissect/root')
+       
+        logger.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
+
+        try:
+            enable_remote_debugging(self)
+        except: 
+            QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
+
+        self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"config.yml")
         self.protected_tables = self.get_protected_tables(self.SECURE_TABLES_CONFIG)
-        
-        
-        # Check if plugin was started the first time in current QGIS session
-        # Must be set in initGui() to survive plugin reloads
-        self.first_start = None
-        self.add_interests = False
+
+        # Declare instance attributes      
         self.tool_map_layers = []
         self.failed_layers =[]
-        self.dlg = ThabReportDialog()
-
-    def initGui(self):
-        
-        self.action = QAction(self.PLUGIN_NAME, self.iface.mainWindow())
-        self.action.triggered.connect(self.run)
-        self.iface.addToolBarIcon(self.action)
-        # self.add_action(icon_path=None,
-        #                 text='Go!',
-        #                 callback=self.run,
-        #                 parent=self.iface.mainWindow)
-        self.first_start = True
-    def unload(self):
-        self.iface.removeToolBarIcon(self.action)
-        del self.action
-
-    def run(self):
-        # set use selected features to true if 
-        # a selection exists in the assigned layer
-        if self.first_start == True:
-            self.first_start = False
-            self.dlg = ThabReportDialog()
-            self.dlg.layer_selection_trigger()
-        
-        self.dlg.show()
-        result = self.dlg.exec_()
-        if self.dlg.useSelected.checkState() == 2:
-            use_selected = True
-        else:
-            use_selected = False
-        if result:
-            user = self.dlg.username_input.text()
-            password = self.dlg.password_input.text()
-            aoi = self.dlg.vector_input.currentLayer()
-            self.add_interests = self.dlg.addInterests.isChecked()
-            assert isinstance(aoi, QgsVectorLayer)
-            report_result = self.process_algorithm(aoi=aoi,
-                                    user=user,
-                                    password=password,
-                                    config_xls= self.XLS_CONFIG,#self.dlg.xls_input.filePath(),
-                                    output_html=self.dlg.report_output.filePath(),
-                                    use_selected=use_selected)
-            donemsg = QMessageBox()
-            if len(self.failed_layers)>0:
-                layer_str = '\n'.join(self.failed_layers)
-                donemsg.setText(f"Your report is complete but some layers could not be validated:" + '\n\n' + layer_str)
-            else:
-                donemsg.setText("Your report is complete")
-            donemsg.setInformativeText(f"{self.dlg.report_output.filePath()}")
-            donemsg.setStandardButtons(QMessageBox.Ok)
-            donemsg_rslt = donemsg.exec_()
-            QgsMessageLog.logMessage("Completed!",self.PLUGIN_NAME,Qgis.Info)
-            
-
-    def tr(self, message):
-        """Get the translation for a string using Qt translation API.
-        We implement this ourselves since we do not inherit QObject.
-        :param message: String for translation.
-        :type message: str, QString
-        :returns: Translated version of message.
-        :rtype: QString
-        """
-        # noinspection PyTypeChecker,PyArgumentList,PyCallByClass
-        return QCoreApplication.translate('ThabReport', message)
 
     def get_protected_tables(table,config_file):
         ''' Returns list of protected tables
         '''
-        conf = yaml.safe_load(open(config_file,'r'))['protected_data']
+        with open(config_file, 'r') as file:
+            conf = yaml.safe_load(file)['protected_data']
         return conf['tables']
+
+    def tr(self, string):
+        """
+        Returns a translatable string with the self.tr() function.
+        """
+        return QCoreApplication.translate('Processing', string)
+
+    def createInstance(self):
+        return DissectAlg()
+
+    def name(self):
+        """
+        Returns the algorithm name, used for identifying the algorithm. This
+        string should be fixed for the algorithm, and must not be localised.
+        The name should be unique within each provider. Names should contain
+        lowercase alphanumeric characters only and no spaces or other
+        formatting characters.
+        """
+        return 'dissect_alg'
+
+    def displayName(self):
+        """
+        Returns the translated algorithm name, which should be used for any
+        user-visible display of the algorithm name.
+        """
+        return self.tr('dissect')
+
+    '''
+    optional script group
+    '''
+    # def group(self):
+    #     """
+    #     Returns the name of the group this algorithm belongs to. This string
+    #     should be localised.
+    #     """
+    #     return self.tr('dissect')
+
+    # def groupId(self):
+    #     """
+    #     Returns the unique ID of the group this algorithm belongs to. This
+    #     string should be fixed for the algorithm, and must not be localised.
+    #     The group id should be unique within each provider. Group id should
+    #     contain lowercase alphanumeric characters only and no spaces or other
+    #     formatting characters.
+    #     """
+    #     return 'dissect'
+
+    def shortHelpString(self):
+        """
+        Returns a localised short helper string for the algorithm. This string
+        should provide a basic description about what the algorithm does and the
+        parameters and outputs associated with it..
+        """
+        return self.tr("""
+        Finds overlapping features within interest layers and produces a summary report.
+        Select an area of interest (and choose to use 'selected features only' if desired).
+        Add your database credentials (+). Give the configuration a name and enter username and password. This login will be stored in an encrypted file within your QGIS profile.
+        If desired, check 'Add overlapping interests to map' to have intersecting features added in QGIS (including all original attributes).
+        Advanced Parameters include setting the interest configuration file and database settings. Default values for these parameters can be set in Options/Advanced/dissect.
+        """)
+        
+    def initAlgorithm(self, config=None):
+        """
+        Here we define the inputs and output of the algorithm, along
+        with some other properties.
+        """      
+        # get settings from QgsSettings (can set manual)
+        logger.debug('Initializing script')
+        s = QgsSettings()
+        settings_list = ['db', 'host', 'outpath', 'port', 'root', 'size', 'xls_config']
+        s.beginGroup('dissect')
+        for key in settings_list:
+            s.value(key,'')
+        
+        outpath = s.value('outpath')
+        if outpath != '':
+            outpath = os.environ['TEMP']
+            outfile = outpath+'\\report'+datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S")+".html"
+        else:
+            outfile = ''
+        
+        self.addParameter(
+            QgsProcessingParameterFeatureSource(
+                self.AOI,
+                self.tr('Area of Interest'),
+                types=[QgsProcessing.TypeVectorPolygon]
+            )
+        )
+        xl_param = QgsProcessingParameterFile(
+                    name = self.XLS_CONFIG_IN,
+                    description = self.tr('Input .xlsx configuration file'),
+                    optional = False,
+                    extension = "xlsx",
+                    defaultValue = s.value('xls_config')
+                    )  
+        xl_param.setFlags(xl_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(xl_param)
+        
+        db_param = QgsProcessingParameterString(
+                    self.DATABASE,
+                    self.tr('Database'),
+                    defaultValue = s.value('db'),
+                    optional = True
+                    )
+        db_param.setFlags(db_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(db_param)
+
+        host_param = QgsProcessingParameterString(
+                    self.HOST,
+                    self.tr('Host'),
+                    defaultValue = s.value('host'),
+                    optional = True
+                    )
+        host_param.setFlags(host_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(host_param)
+
+        port_param = QgsProcessingParameterString(
+                    self.PORT,
+                    self.tr('Port'),
+                    defaultValue = s.value('port'),
+                    optional = True
+                    )
+        port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagAdvanced)
+        self.addParameter(port_param)
+        
+        self.addParameter(
+            QgsProcessingParameterAuthConfig(
+                self.AUTH_CONFIG,
+                self.tr('Database authentication'),
+                optional = True
+            )
+        )
+
+        out_param = QgsProcessingParameterFileDestination(
+                    self.OUTPUT,
+                    self.tr('Report output file'),
+                    'HTML files (*.html)',
+                    defaultValue = outfile
+                    )
+        port_param.setFlags(port_param.flags() | QgsProcessingParameterDefinition.FlagIsModelOutput)
+        self.addParameter(out_param)
+
+        self.addParameter(
+            QgsProcessingParameterBoolean(
+                self.ADD_INTERESTS,
+                self.tr('Add overlapping interests to map'),
+                defaultValue = False
+            )
+        )
+        s.endGroup()
+        logger.debug('Initialization complete')
+
 
     def parse_config(self,xlsx):
         ''' parses xls into list of dictionaries 
@@ -164,6 +308,7 @@ class ThabReport:
                             'Column4':''},{}]
         '''
         assert os.path.exists(xlsx)
+        os.path
         data = []
         xl = pd.ExcelFile(xlsx)
         assert len(xl.sheet_names)>0, f"Problem reading excel file ({xlsx})"
@@ -174,87 +319,132 @@ class ThabReport:
             data.append({worksheet:d})
         return data
 
-    def process_algorithm(self,aoi,user,password,config_xls,output_html,use_selected=False):
-        
-        aoi_in =aoi
-        
-        database = self.DATABASE_CONFIG['database']
-        host = self.DATABASE_CONFIG['host']
-        port = str(self.DATABASE_CONFIG['port'])
-        user = user
-        password = password
-        output = output_html
-        xls_file = config_xls
-
-        progress = QProgressBar()
-        progress.setMaximum(100)
-        progress.setAlignment(Qt.AlignLeft|Qt.AlignVCenter)
-        progressMessageBar = self.iface.messageBar().createMessage("If software appears frozen, do not touch -tool is still working!              Progress Status:")
-        progressMessageBar.layout().addWidget(progress)
-        self.iface.messageBar().pushWidget(progressMessageBar, level=0)
-        self.iface.mainWindow().blockSignals(True) #turns off CRS dialog box when creating 
-        QgsMessageLog.logMessage(f"Starting {self.PLUGIN_NAME}",self.PLUGIN_NAME,Qgis.Info)
-        progress.setValue(1)
-        
+    def processAlgorithm(self, parameters, context, feedback):
+        """
+        Here is where the processing itself takes place.
+        """
         try:
-            if aoi_in.selectedFeatureCount()>0 and use_selected == True:
+            import ptvsd
+            ptvsd.debug_this_thread()
+        except:
+            feedback.pushInfo("Debug for VS not enabled")
+
+        self.config()
+        logger.debug('Alg class initialized')
+
+
+        # Retrieve the feature source and sink. The 'dest_id' variable is used
+        # to uniquely identify the feature sink, and must be included in the
+        # dictionary returned by the processAlgorithm function.
+        
+        aoiSource = self.parameterAsSource(parameters, 'AOI', context) # TODO do we need to use this for input w ParameterFeatureSource?
+        aoi = aoiSource.materialize(QgsFeatureRequest())
+        config_xls = self.parameterAsFile(parameters, 'XLS_CONFIG_IN', context)
+        auth_method_id = self.parameterAsString(parameters, 'AUTH_CONFIG', context)
+        output_html = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
+        self.add_interests = self.parameterAsBoolean(parameters, 'ADD_INTERESTS', context)
+        database = self.parameterAsString(parameters, 'DATABASE', context)
+        host = self.parameterAsString(parameters, 'HOST', context)
+        port = self.parameterAsString(parameters, 'PORT', context)
+
+        if feedback.isCanceled():
+            feedback.pushInfo('Process cancelled by user.')
+            return {}
+
+        # TODO configure progress bar for processing 
+        # see ln 187 in __init__.py for qgis_plugin for old code for message bar
+
+        aoi_in = aoi
+        xls_file = config_xls
+        output = output_html
+        
+        # get the application's authenticaion manager
+        auth_mgr = QgsApplication.authManager()
+        # create an empty authmethodconfig object
+        auth_cfg = QgsAuthMethodConfig()
+        # load config from manager to the new config instance and decrypt sensitive data
+        auth_mgr.loadAuthenticationConfig(auth_method_id, auth_cfg, True)
+        # get the configuration information (including username and password)
+        auth_info = auth_cfg.configMap()
+        try:
+            user = auth_info['username']
+            password = auth_info['password']
+        except:
+            user = ''
+            password = ''
+
+        # TODO clean up
+        '''
+        I'm pretty sure if we take this route we can delete all the
+        references to use_selected as aoiSource either only takes the selected
+        features (or only passes on selected features during materialize()) 
+        '''
+        use_selected = False
+
+        try:
+            if use_selected == True and aoi_in.selectedFeatureCount()>0:
                 #export to in memory layer
                 aoi = processing.run("native:saveselectedfeatures", {'INPUT': aoi_in, 'OUTPUT': 'memory:'})['OUTPUT']
             else:
-                if aoi_in.featureCount()>20:
-                    msg = QMessageBox()
-                    msg.setText(f"Your area of interest ({aoi_in.name()}) contains many features")
-                    msg.setInformativeText("would you like to push the limits?")
-                    msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
-                    msg_rslt = msg.exec_()
-                    if not msg_rslt == QMessageBox.Ok:
-                        QgsMessageLog.logMessage("User initiated exit",self.PLUGIN_NAME,Qgis.Critical)
-                        return False
+                ## TODO set up warning for many featured input
+                # if aoi_in.featureCount()>20:
+                #     msg = QMessageBox()
+                #     msg.setText(f"Your area of interest ({aoi_in.name()}) contains many features")
+                #     msg.setInformativeText("would you like to push the limits?")
+                #     msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+                #     msg_rslt = msg.exec_()
+                #     if not msg_rslt == QMessageBox.Ok:
+                #         QgsMessageLog.logMessage("User initiated exit",self.PLUGIN_NAME,Qgis.Critical)
+                #         return False
                 aoi = aoi_in.clone()
             if aoi.sourceCrs().isGeographic:
                 parameter = {'INPUT': aoi, 'TARGET_CRS': 'EPSG:3005','OUTPUT': 'memory:aoi'}
                 aoi = processing.run('native:reprojectlayer', parameter)['OUTPUT']
             QgsProject.instance().addMapLayer(aoi,False)
-            if aoi.wkbType() == QgsWkbTypes.Point:
-                raise TypeError('Area of Interest cannot be a point geometry')
-            if aoi.wkbType() == QgsWkbTypes.LineString:
-                raise TypeError('Area of Interest cannot be a line geometry')                
-            # set tab in messageLog
-            dock = self.iface.mainWindow().findChild(QDockWidget, 'MessageLog')
-            tabs = dock.findChild(QTabWidget, 'tabWidget')
-            for tab in range(tabs.count()):
-                text = tabs.tabText(tab)
-                if text == self.PLUGIN_NAME:
-                    tabs.setCurrentIndex(tab)
-                    break
-
-            #create object 
-            oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password)
             
+            # create db object 
+            oq_helper = oracle_pyqgis(database=database,host=host,port=port,user=user,password=password,feedback=None)
+
             # init report with AOI
-            report_obj = report(aoi,template_path=self.APP_ROOT,feedback=None)
+            report_obj = report(aoi,template_path=self.CONFIG_PATH,feedback=None)
 
             # creates list of all fc to compare aoi too
             parsed_input = self.parse_config(xls_file)
-            progress.setValue(5)
+            logger.debug(f'Config xlsx parsed successfully ({xls_file})')
+
+            ## TODO set up progress bar
+            # progress.setValue(5)
             
-            #estimate the number of layers to process
+            # estimate the number of layers to process
             estimated_count = 0
             for t in parsed_input:
                 for k in t:
                     for d in t[k]:
                         if d['Layer Name'] is not None:
                             estimated_count += 1
-            i = (90 / estimated_count)           
-            #feedback.pushInfo(f"Evaluating {estimated_count} interests")
+            i = (90 / estimated_count)
+            feedback.pushInfo(f"Evaluating {estimated_count} interests")
             for tab_dict in parsed_input:
+                logger.debug(f'Processing tab_dict: {tab_dict}')
+                if feedback.isCanceled():
+                    feedback.pushInfo('Process cancelled by user.')
+                    return {}
                 for key in tab_dict:
+                    logger.debug(f'Processing key: {key}')
+                    if feedback.isCanceled():
+                        feedback.pushInfo('Process cancelled by user.')
+                        return {}
                     tab = tab_dict[key]
                     for dic in tab:
+                        logger.debug(f'Processing dic: {dic}')
+                        if feedback.isCanceled():
+                            feedback.pushInfo('Process cancelled by user.')
+                            return {}
                         lyr_start = time.time()
                         layer_title = dic['Layer Name']
                         if layer_title is not None:
                             layer_title = layer_title.strip()
+                            logger.debug(f'Processing layer: {layer_title}')
                             layer_subgroup = dic['Layer Group Heading']
                             layer_table = dic['Feature Class Name']
                             if layer_table is not None:
@@ -266,21 +456,28 @@ class ThabReport:
                             if layer_sql is None:
                                 layer_sql = ''
                             layer_expansion = dic['Attribute ID']
-                            feature_layer_lst = [] #build empty layer list for each obj to be merged at end of unique feature cycle
-                            QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
+                            feature_layer_lst = [] # build empty layer list for each obj to be merged at end of unique feature cycle
+                            #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
+                            feedback.pushInfo('--- ' + str(layer_title) + ' ---')
+                            logger.debug(f'{layer_title} location: {location}')
                             features = aoi.getFeatures()
-                            for item in features: #iterate through each item in aoi
+                            for item in features: # iterate through each item in aoi
+                                logger.debug(f'{layer_title} - feature item {item}')
+                                if feedback.isCanceled():
+                                    feedback.pushInfo('Process cancelled by user.')
+                                    return {}
                                 aoi.select(item.id())
-                                # method of calculating overlap is source dependent
                                 if (location == 'BCGW'):
+                                    logger.debug(f'{layer_title} - is in BCGW')
                                     assert layer_table is not None
-                                    # ensure that input table exists and has a geometry
+                                    # get overlapping features
                                     has_table = oq_helper.has_table(layer_table)
                                     if has_table == True:
                                         has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
                                     else:
                                         has_spatial_rows = False
                                     if has_table == True and has_spatial_rows == True:
+                                        logger.debug(f'{layer_title} - table and rows confirmed')
                                         # get features from bbox
                                         selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
                                         try:
@@ -288,31 +485,41 @@ class ThabReport:
                                                 # clip them
                                                 result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
                                                 if result.featureCount()>0:
-                                                    QgsMessageLog.logMessage(f"{layer_title} with ({result.featureCount()}) overlapping features",self.PLUGIN_NAME,Qgis.Info)
+                                                    feedback.pushInfo(f"{layer_title} with ({result.featureCount()}) overlapping features")
+                                                    logger.debug(f"{layer_title} returned with ({result.featureCount()}) overlapping features")
                                             else:
                                                 # return layer with no features
                                                 result = selected_features
+                                                logger.debug(f"{layer_title} returned no overlapping features")
                                         except:
                                             try:
+                                                logger.debug(f"{layer_title} fixing geometry")
                                                 f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
                                                 result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                
+                                                logger.debug(f"{layer_title} geometry fixed and clipped")
                                             except:
-                                                QgsMessageLog.logMessage(f"Error in accessing {layer_title}",self.PLUGIN_NAME,Qgis.Warning)
+                                                self.failed_layers.append(layer_title)
+                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='BCGW - data/geometry issue')
+                                                feedback.pushInfo(f"Error in accessing {layer_title}")
                                         if result is not None:
                                             # feedback.pushInfo(f"result type {type(result)}")
                                             # feedback.pushInfo(f"clip result count: {result.featureCount()}")
                                             feature_layer_lst.append(result)
+                                            logger.debug(f"{layer_title} appended to feature_layer_lst")
                                     else:
-                                        # seems that table does not exist or does not have geometry
                                         if has_table:
-                                            QgsMessageLog.logMessage(f"No data in table: BCGW {layer_table}",self.PLUGIN_NAME,Qgis.Warning)
+                                            feedback.pushInfo(f"No data in table: BCGW {layer_table}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='No data in table: BCGW')
+                                            logger.debug(f"{layer_title} contains no rows")
                                         else:
-                                            QgsMessageLog.logMessage(f"Can not access: BCGW {layer_table}",self.PLUGIN_NAME,Qgis.Warning)
+                                            feedback.pushInfo(f"Can not access: BCGW {layer_table}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not access on BCGW')
+                                            logger.debug(f"{layer_title} could not be accessed")
                                 elif (location is not None):
                                     if os.path.exists(location):
-                                        # File based data source
-                                        # Allowed types: coverage, shp,kml,kmz,geojson,gdb,gpkg 
+                                        logger.debug(f'{layer_title} exists, starting processing')
                                         rlayer = None
                                         vlayer = None
                                         filename, file_extension = os.path.splitext(location)
@@ -337,35 +544,51 @@ class ThabReport:
                                         elif file_extension in ['.shp','.kml','.kmz','.geojson']:
                                             file_location = location + location_sql
                                             vlayer = QgsVectorLayer(file_location, layer_title, "ogr")
-                                            assert vlayer.isValid(),f"Failed to add {layer_title}:{filename}"
+                                            if vlayer.isValid() == False:
+                                                feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
+                                                self.failed_layers.append(layer_title)
+                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid input')
                                         elif file_extension in ['.tif']:
                                             rlayer = QgsRasterLayer(location,layer_title)
-                                            assert rlayer.isValid(),f"Failed to add {layer_title}:{filename}"
+                                            if rlayer.isValid() == False:
+                                                feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
+                                                self.failed_layers.append(layer_title)
+                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid raster input')
                                         elif file_extension in ['.gdb','gpkg']:
                                             ogr_string = f"{location}|layername={layer_table}{location_sql}"
                                             vlayer = QgsVectorLayer(ogr_string, layer_title, "ogr")
                                         else:
-                                            QgsMessageLog.logMessage(f"No loading function for {layer_title}: {location}",self.PLUGIN_NAME,Qgis.Warning)
+                                            feedback.pushInfo(f"No loading function for {layer_title}: {location}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path or input type')
                                         if vlayer is not None:
+                                            logger.debug(f'{layer_title} is vector layer, starting processing')
                                             try:
                                                 if vlayer.isValid():
                                                     vlayer.setSubsetString(layer_sql)
                                                     if vlayer.featureCount()>0:
+                                                        logger.debug(f'{layer_title} has valid geometry')
                                                         result = processing.run("native:clip", {'INPUT':vlayer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                        logger.debug(f'{layer_title} clipped')
                                                     else:
-                                                        QgsMessageLog.logMessage(f"Definintion Query for {layer_title}: {location} | {layer_sql}",self.PLUGIN_NAME,Qgis.Warning)
+                                                        feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
                                                 else:
-                                                    QgsMessageLog.logMessage(f"Vector layer invalid {layer_title}: {location} | {layer_table}({location_sql})",self.PLUGIN_NAME,Qgis.Critical)
+                                                    feedback.pushInfo(f"Vector layer invalid {layer_title}: {location} | {layer_table}({location_sql})")
                                             except:
                                                 vlayer.setSubsetString(layer_sql)
                                                 if vlayer.featureCount()>0:
+                                                    logger.debug(f'{layer_title} has invalid geometry, fixing...')
                                                     f_layer = processing.run("native:fixgeometries", {'INPUT':vlayer,'OUTPUT':'memory:{layer_title}fix'})['OUTPUT']
+                                                    logger.debug(f'{layer_title} geo fixed')
                                                     result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                    logger.debug(f'{layer_title} clipped')
                                                 else:
-                                                    QgsMessageLog.logMessage(f"Definintion Query for {layer_title}: {location} | {layer_sql}",self.PLUGIN_NAME,Qgis.Warning)
-                                            if result is not None:
-                                                feature_layer_lst.append(result)
-
+                                                    feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
+                                            finally:
+                                                if result is not None:
+                                                    feature_layer_lst.append(result)
+                                                    logger.debug(f'{layer_title} added to feature_layer_lst')
+                                                    feedback.pushInfo(f"{layer_title}: {result.featureCount()} overlapping features found")
                                         elif rlayer is not None:
                                             enable_raster = False
                                             # work below for feature to report on raster layers. This is disabled and
@@ -437,16 +660,21 @@ class ThabReport:
                                                     result = None
                                                 # end raster processing
                                                 # QgsMessageLog.logMessage("No raster summary function",self.PLUGIN_NAME,Qgis.Warning)
+
                                             if result is not None:
                                                 feature_layer_lst.append(result)
+                                                
                                     else:
                                         # os.path.exists(location) == False
-                                        QgsMessageLog.logMessage(f"Can not make valid: {location}",self.PLUGIN_NAME,Qgis.Warning)
+                                        feedback.pushInfo(f"Can not make valid: {location}")
                                         self.failed_layers.append(layer_title)
+                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path')
 
                                 aoi.removeSelection()
-                                result = None
+
+                            # TODO understand this - it is only for BCGW? (or raster) why?
                             if len(feature_layer_lst) > 0:
+                                logger.debug(f'{layer_title} Merging feature_layer_lst, length: {len(feature_layer_lst)}')
                                 try:
                                     if len(feature_layer_lst)>1:
                                         result = processing.run("native:mergevectorlayers", {'LAYERS':feature_layer_lst, 'CRS':QgsCoordinateReferenceSystem('EPSG:3005'),'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
@@ -460,7 +688,8 @@ class ThabReport:
                                         res = result.dataProvider().deleteAttributes([idx])
                                         result.updateFields()
                                 except:
-                                    QgsMessageLog.logMessage(f"Could not merge results for {layer_title}",self.PLUGIN_NAME,Qgis.Critical)
+                                    feedback.pushInfo(f"Could not merge results for {layer_title}")
+                            
                             # test new report
                             if (layer_expansion is None):
                                 layer_expansion = ''
@@ -471,118 +700,68 @@ class ThabReport:
                                 summary_fields = []
                             try:
                                 delta_time = round(time.time()-lyr_start,1)
-                                QgsMessageLog.logMessage(f"{layer_title}: {delta_time} seconds",self.PLUGIN_NAME,Qgis.Info)
+                                feedback.pushInfo(f"{layer_title}: {delta_time} seconds")
+                                logger.debug(f'{layer_title}: {delta_time} seconds to process')
                                 if result is not None:      
                                     if result.featureCount()>0:
                                         if self.add_interests is True:
+                                            logger.debug(f'{layer_title}: adding to map')
                                             QgsProject.instance().addMapLayer(result)
                                             self.tool_map_layers.append(result.id())
+                                            logger.debug(f'{layer_title}: added to map')
                                     if layer_table not in self.protected_tables:
                                         report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=False)
+                                        logger.debug(f'{layer_title}: added to report (non-secure)')
                                     else:
                                         report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=True)
-                                p = progress.value()
-                                progress.setValue(p+i)
+                                        logger.debug(f'{layer_title}: added to report (secure)')
+                                ## TODO progress bar
+                                # p = progress.value()
+                                # progress.setValue(p+i)
                             except:
-                                 QgsMessageLog.logMessage(f"Failed to add interest {layer_title}",self.PLUGIN_NAME,Qgis.Warning,True)
+                                feedback.pushInfo(f"Failed to add {layer_title} to map/report")
+                                logging.error(f'{layer_title}: failed to add to map/report')
+                            finally:
+                                result = None
+
             # write report
             result = report_obj.report(output)
+            logger.debug('Report produced')
+            # clean up
             QgsProject.instance().removeMapLayer(aoi.id())
-            
+            report_obj = None
+            del oq_helper
+            logger.debug('Clean up complete')
+            feedback.pushInfo(f"Failed layers: {self.failed_layers}")
+            result_msg = {}
+            result_msg[self.OUTPUT] = output
+            return result_msg
 
         except Exception as e:
+            # clean up
             QgsProject.instance().removeMapLayer(aoi.id())
             for lyr_id in self.tool_map_layers:
                 QgsProject.instance().removeMapLayer(lyr_id)
+            report_obj = None
+            del oq_helper
             raise QgsProcessingException(sys.exc_info())
-
-        progress.setValue(100)
-        self.iface.messageBar().clearWidgets()
-        return {'OUTPUT': result}
-
-    def gdal_polygonize(self,src_raster,raster_band=1,vector_value_field='DN'):
-        ''' gdal_polygonize polygonizes the src_raster to temporary shape file
-        '''
-        sourceRaster = gdal.Open(src_raster)
-        band = sourceRaster.GetRasterBand(raster_band)
-        # bandArray = band.ReadAsArray()
-        outShapefile = os.path.join(tempfile.gettempdir(),"polygonized.shp")
-        driver = ogr.GetDriverByName("ESRI Shapefile")
-        if os.path.exists(outShapefile):
-            driver.DeleteDataSource(outShapefile)
-
-        shp_srs = osr.SpatialReference()
-        shp_srs.ImportFromWkt(sourceRaster.GetProjectionRef())
-
-        outDatasource = driver.CreateDataSource(outShapefile)
-        outLayer = outDatasource.CreateLayer("polygonized", srs=shp_srs)
-        new_fld = ogr.FieldDefn('DN', ogr.OFTInteger)
-        outLayer.CreateField(new_fld)
-        gdal.Polygonize( band, None, outLayer, 0, [], callback=None )
-        return outShapefile
-    
-    def gdal_raster_clip(self,in_raster,vector_mask):
-        ''' gdal_raster_clip clips raster to vector mask
-            vector mask must be .shp or QgsVectorLayer
-        '''
-        if isinstance(in_raster,QgsRasterLayer):
-            rst = in_raster.dataProvider().dataSourceUri()
-        else:
-            rst = in_raster
-        if isinstance(vector_mask,QgsVectorLayer):
-            tmpshp = 'clip_shp.shp'
-            clp_shp = self.vectorlayer_to_shp(vector_mask,tmpshp)
-        else:
-            clp_shp = vector_mask
-        output_raster = os.path.join(os.environ['TEMP'],'tmp_clip_raster.tif')
-        
-        if os.path.exists(output_raster):
-            os.remove(output_raster)
-
-        ds = gdal.Warp(output_raster,rst,cutlineDSName=clp_shp,cropToCutline=True,warpOptions = [ 'CUTLINE_ALL_TOUCHED=TRUE' ])
-        return output_raster
-
-    def vectorlayer_to_shp(self,layer,out_name,folder='TEMP',only_selected=True):
-        '''Export QgsVectorlayer to shapefile
-            layer : QgsVectorLayer
-            out_name: Str 
-            folder: Str
-            only_selected: Boolean
             
-            example usage returns exported selected features as shapefile path "T:/test/layer.shp"
-            my_shp = vectorlayer_to_shp(vlayer,"layer.shp","T:/test",True)
-            
-            "TEMP" folder saves file in os.environ["TEMP"] location
+
         '''
+        TODO remove
+        
+        stuff below here in processingAlgorithm class is from template and likely
+        must be deleted
+        '''
+       
+        # # Compute the number of steps to display within the progress bar and
+        # # get features from source
+        # total = 100.0 / aoi.featureCount() if aoi.featureCount() else 0
+        # features = aoi.getFeatures()
 
-        file_name = out_name
-        if folder=='TEMP':
-            temp_path = os.environ['TEMP']
-            tempfile = os.path.join(temp_path,file_name)
-            if os.path.exists(tempfile):
-                driver = ogr.GetDriverByName('ESRI Shapefile')
-                driver.DeleteDataSource(temp_path)
-        else:
-            temp_path = folder
-            assert os.path.exists(folder), f"Output folder does not exist: {folder}"
-        
-        path = os.path.join(temp_path,file_name)
-        destcrs = layer.dataProvider().crs()#QgsCoordinateReferenceSystem("EPSG:4326")
-        options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = "ESRI Shapefile"
-        options.fileEncoding = "utf-8"
-        context = QgsProject.instance().transformContext()
-        options.ct = QgsCoordinateTransform(layer.sourceCrs() ,destcrs,context)
-        if layer.selectedFeatureCount()>0 and only_selected is True:
-            options.onlySelectedFeatures = True
-            error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=path, transformContext=context,options=options)
-        else:
-            error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=path, transformContext=context,options=options)        
-        
-        assert error[0] == QgsVectorFileWriter.NoError
-        
-        return path
-
+        #     # Update the progress bar
+        #     feedback.setProgress(int(current * total))
+   
 class report:
     ''' Class report includes parameters to track attributes of interests and
         methods to generate a report
@@ -597,6 +776,9 @@ class report:
             geojson:'filepath'
         }
     '''
+    # import ptvsd
+    # ptvsd.debug_this_thread()
+
     TEMPLATE_RELATIVE_PATH = 'templates'
 
     def __init__(self,aoi,template_path,feedback):
@@ -605,8 +787,8 @@ class report:
         self.template_path = template_path
         self.interests = []
         self.aoi = self.aoi_info(aoi)
-        self.aoi_layer = aoi
-        self.__size = 0
+        self.aoi_layer = aoi # TODO remove? never used?
+        self.failedLyrs = []
         
     def aoi_info(self,aoi):
         '''prepars key:value dict with keys name,area,geojson
@@ -639,10 +821,11 @@ class report:
         ''' add an interest to the report
             parameters: interested_layer
         '''
-        # self.fb.pushInfo(f"REPORT add interest: {intersected_layer.name()}({intersected_layer.featureCount()})")
+        
         interest = {'name':intersected_layer.name(),
             'group':group,
             'subgroup':subgroup}
+        logger.debug(f'Building report: adding interest {interest}')
         fieldNames = [field.name() for field in intersected_layer.fields()]
         summary_dict = {}
         d = {'count':0,'length':0.0,'area':0.0}
@@ -663,11 +846,17 @@ class report:
                 l = geom.length()
                 d['length'] += l
             else:
+                logging.error(f"Unexpected geometry type:{geom_type} during add_interest")
                 raise Exception (f"Unexpected geometry type:{geom_type}")
             value_merge = []
             for sf in summary_fields:
                 assert sf in fieldNames, f"summary field ({sf}) does not exist in layer({intersected_layer.name()})"
-                value_merge.append(str(f[sf]))
+                value = f[sf]
+                if isinstance(value, QDateTime): # convert QDateTime to formatted string
+                    value=value.toPyDateTime().date().isoformat()
+                else:
+                    value = str(value)
+                value_merge.append(value)
             if len(value_merge)>0:
                 value_string =" | ".join(value_merge)
                 field_string =" | ".join(summary_fields)
@@ -687,14 +876,15 @@ class report:
                     summary_dict[value_string]['unit']='ha'
             else:
                 field_string=''
-
+        
         if (d['area']>0):
             interest['value'] = d['area']/10000
             interest['unit'] = 'ha'
         elif (d['length']>0):
             interest['value'] = d['length']
             interest['unit'] = 'm'
-        if 'count' in d.keys():
+        if (d['count']>0):
+            interest['value'] = d['count']
             interest['count'] = d['count']
         else:
             interest['count']=0
@@ -705,19 +895,23 @@ class report:
             if secure is True:
                 interest['geojson'] = None   
             else: 
+                logger.debug(f'Exporting {intersected_layer} to geojson')
                 interest['geojson'] = self.vectorlayer_to_geojson(intersected_layer)
+                logger.debug('Exported to geojson, geojson returned')
         else:
             interest['geojson'] = None
             interest['field_summary'] = []
         self.interests.append(interest)
-        self.__size = self.__size + self.actualsize(interest)
+        logger.debug('Interest appended to interests')
     def vectorlayer_to_geojson(self,layer):
         '''Export QgsVectorlayer to temp geojson'''
         file_name = layer.name().replace(' ','_').replace('.','_') + ".geojson"
         file_name = file_name.replace('/','_')
         file_name = file_name.replace('\\','_')
+        logger.debug('V2GEOJSON: geojson name built')
         temp_path = os.environ['TEMP']
         geojson_path = os.path.join(temp_path,file_name)
+        logger.debug('V2GEOJSON: geojson path built')
         destcrs = QgsCoordinateReferenceSystem("EPSG:4326")
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.driverName = "GeoJSON"
@@ -726,23 +920,45 @@ class report:
         options.ct = QgsCoordinateTransform(layer.sourceCrs() ,destcrs,context)
         if layer.selectedFeatureCount()>0:
             options.onlySelectedFeatures = True
-            error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
+            logger.debug('V2GEOJSON: about to write (selected feat only)')
+            # TODO use .writeAsVectorFormatV3
+            error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            # error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
+            logger.debug('V2GEOJSON: json written')
         else:
-            error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            logger.debug('V2GEOJSON: about to write')
+            error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+            # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
             #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON")
-        
-        assert error[0] == QgsVectorFileWriter.NoError
+            logger.debug('V2GEOJSON: json written')
+
+        assert error[0] == 0, 'error not equal to 0'
+        assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
+        # TODO get feedback working within report class
         # self.fb.pushInfo(f"export json --> {geojson_path}")
+        logger.debug('V2GEOJSON: assert passed, about to load json')
         geojson = self.load_geojson(geojson_path)
+        logger.debug('V2GEOJSON: json loaded')
         return geojson
 
-    
     def load_geojson(self,file):
         ''' loads a json file to string '''
         with open(file) as f:
             data = json.load(f)
         return json.dumps(data)
+
+    def add_failed(self, layer_title, subgroup, group, comment=None):
+        ''' add a failed interest to the report'''
+        logger.debug(f"REPORT add failed layer: {layer_title}")
+        failedLyr = {'name':layer_title,
+            'group':group,
+            'subgroup':subgroup,
+            'comment':comment}   
+
+        self.failedLyrs.append(failedLyr)
+        logger.debug('Interest appended to failed layers')
+
     def report(self,outfile):
         """ Build html report based on self.interests --> html file
         """
@@ -751,7 +967,7 @@ class report:
         env = jinja2.Environment(loader=jinja2.FileSystemLoader(
             searchpath=os.path.join(self.template_path,self.TEMPLATE_RELATIVE_PATH))
             )
-        template = env.get_template('home.html')
+        template = env.get_template('home.html', parent='layout.html')
         intersecting_layers = []
         non_intersecting_layers=[]
         for i in self.interests:
@@ -762,32 +978,25 @@ class report:
         layers = [i for i in self.interests]
         layer_sort = sorted(intersecting_layers, key=lambda k: k['value'],reverse=True) 
         layers = layer_sort + non_intersecting_layers
-        # TODO: need a size filter for exporting of geojson into html as html can get big
-        # either a) keep geojson adjacent to html (add js to make the map work)
-        # or b remove funtion for inclusion of  geojson / mapping of overlaps for big AOI
-        # ie: if self.__size > 524288000: remove geojson from layers
-
-        ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate)
-        
+        ahtml = template.render(aoi = self.aoi,interests=layers, reportDate=reportDate, failedLyrs = self.failedLyrs)
+        #ahtml = template.render(species=aoi.species, shape=aoi.poly,aoi=aoi)
+        outpath = os.path.dirname(outfile)
+        # Check whether the specified path exists or not
+        pathExist = os.path.exists(outpath)
+        logger.debug(f'Output path {outpath} exists: {pathExist}')
+        if not pathExist:      
+            # Create a new directory because it does not exist 
+            os.makedirs(outpath)
+            logger.debug('Outpath created')
         with open(outfile, 'w') as f:
-            f.write(ahtml)
+            f.write(ahtml)    
+        logger.debug(f'Report written to file ({(os.path.getsize(outfile)/1000):.0f} KB)')
         #the last hurah!
+        # arcpy.SetParameterAsText(1, outfile)
+        env = None
+        template = None
         return outfile
-    def actualsize(input_obj):
-        ''' calculate size of object
-        '''
-        memory_size = 0
-        ids = set()
-        objects = [input_obj]
-        while objects:
-            new = []
-            for obj in objects:
-                if id(obj) not in ids:
-                    ids.add(id(obj))
-                    memory_size += sys.getsizeof(obj)
-                    new.append(obj)
-            objects = gc.get_referents(*new)
-        return memory_size
+
 class oracle_pyqgis:
     ''' oracle_pyqgis has utilities for creating qgsVectorLayer objects for loading into QGIS
     constructor (database: str,
@@ -796,8 +1005,12 @@ class oracle_pyqgis:
             port: int,
             password: str)
     '''
-    def __init__(self,database,host,port,user,password):
+    # import ptvsd
+    # ptvsd.debug_this_thread()
+
+    def __init__(self,database,host,port,user,password,feedback):
         
+        self.fb = feedback
         self.user_name = user
         self.user_pass = password
         self.host = host
@@ -808,27 +1021,43 @@ class oracle_pyqgis:
     def __del__(self):
         # close db before destruction
         self.close_db_connection()
+        self.db = None
+        qdb = None
 
     def open_db_connection(self):
         ''' open_db_connection creates and opens a db connection to the oracle database
         '''
+        logger.debug('Attempting db connection')
         driver ="QOCISPATIAL"
         conn_name = "bcgw_conn"
-        if not QSqlDatabase.contains(conn_name):
-            self.db = QSqlDatabase.addDatabase(driver,conn_name)
-        else:
-            self.db = QSqlDatabase.database(conn_name)
+        qdb = QSqlDatabase()
+        self.db = qdb.addDatabase(driver,conn_name)
         self.db.setDatabaseName(self.host + "/" + self.database)
         self.db.setUserName(self.user_name) 
         self.db.setPassword(self.user_pass) 
         db_open = self.db.open()
+        logger.debug(f'db connection status: {db_open}')
         return db_open
+    
     def close_db_connection(self):
         ''' close_db_connection closes db connection to the oracle database
         '''
         if self.db.isOpen():
             self.db.close()
-        
+            logger.debug(f'db connection closed')
+    
+    def check_connection(self):
+        if not self.db.isOpen():
+            try:
+                if self.db.open() is False:
+                    self.open_db_connection()
+                assert self.db.isOpen()
+            except:
+                logging.error(f"Failed to connect to {self.database}/{self.host}")
+                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+
+                
+                
     def create_layer_anyinteract(self,overlay_layer,layer_name,db_table,sql):
         ''' creates a qgsvectorlayer using an anyinteract query
             overlay_layer: qgsvectorlayer, QgsFeature
@@ -905,13 +1134,7 @@ class oracle_pyqgis:
         '''
         owner, table = db_table.split('.')
         
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db) 
         query = f"select VIEW_NAME NAME from all_views where owner = '{owner}' and VIEW_NAME = '{table}' union select TABLE_NAME NAME from all_tables where owner = '{owner}' and TABLE_NAME = '{table}'"
         q.exec(query)
@@ -926,13 +1149,7 @@ class oracle_pyqgis:
         '''
         owner,table = db_table.split('.') 
         geom_column_name = self.get_bcgw_geomcolumn(db_table=db_table)
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db)
         # confrm there are rows
         query = f"SELECT rownum from {owner}.{table} t where rownum=1"
@@ -963,13 +1180,7 @@ class oracle_pyqgis:
                         7:QgsWkbTypes.MultiPolygon}
         
         owner,table = db_table.split('.') 
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db) 
         query = f"SELECT MAX(t.{geom_column_name}.GET_GTYPE()) AS geometry_type from {owner}.{table} t where rownum <10"
         q.exec(query) 
@@ -983,13 +1194,7 @@ class oracle_pyqgis:
     def get_bcgw_geomcolumn(self,db_table):
         '''returns the name of the geometry column for oracle table '''
         owner,table = db_table.split('.') 
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db) 
         query ="SELECT COLUMN_NAME from all_tab_columns where OWNER = '{}' AND TABLE_NAME = '{}' AND DATA_TYPE = 'SDO_GEOMETRY'".format(owner,table)  
         q.exec(query) 
@@ -1001,13 +1206,7 @@ class oracle_pyqgis:
         ''' estimate a unique id column for an oracle table if OBJECTID does not exist '''
         # estimate a unique id column for an oracle table if OBJECTID does not exist
         owner,table = db_table.split('.') 
-        if not self.db.isOpen():
-            try:
-                if self.db.open() is False:
-                    self.open_db_connection()
-                assert self.db.isOpen()
-            except:
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+        self.check_connection()
         q = QSqlQuery(self.db)
         sql = f"SELECT cols.column_name \
         FROM all_tab_cols cols where cols.table_name = '{table}' and cols.COLUMN_NAME like \'OBJECTID\'"
