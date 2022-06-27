@@ -193,7 +193,7 @@
     <script>
         // enter API key and un-comment Imagery and Topographic vector layers below
         const API_KEY = "";
-        const map = L.map("map",{ zoomControl:false }).setView([{{aoi.centerLatLong}}], 10);
+        const map = L.map("map",{ zoomControl:false }).fitBounds({{aoi.bounds}}).zoomOut(1);
         //L.esri.basemapLayer("Topographic").addTo(map);
         const basemapLayers = {
           "Topographic(D)":L.esri.basemapLayer('Topographic').addTo(map)

@@ -806,16 +806,20 @@ class report:
             assert geom_type in ['Polygon','MultiPolygon','Polygon25D','MultiPolygonZ'], "Area of interestest must be polygonal"
             a += geom.area()
         geojson = self.vectorlayer_to_geojson(aoi)
-        centroid = self.get_layer_center(aoi,4326)
+        bb = self.get_bb(aoi,4326)
+        # bb = self.get_bb(aoi,4326)
         name = aoi.name()
-        d = {'name':name,'area':a,'centerLatLong':centroid,'geojson':geojson}
+        d = {'name':name,'area':a,'bounds':bb, 'geojson':geojson}
         return d
 
-    def get_layer_center(self,layer,to_epsg_cd):
+    def get_bb(self,layer,to_epsg_cd):
         """ returns Lat,Long string"""
         r_layer = processing.run('native:reprojectlayer', {'INPUT': layer, 'TARGET_CRS': 'EPSG:{}'.format(to_epsg_cd), 'OUTPUT': 'memory:{}'.format(layer.name())})['OUTPUT']
-        center = r_layer.extent().center()
-        return str(center.y()) +', '+ str(center.x())
+        # center = r_layer.extent().center()
+        bb = r_layer.extent()
+        corner1=[round(bb.yMinimum(),7), round(bb.xMinimum(),7)]
+        corner2=[round(bb.yMaximum(),7), round(bb.xMaximum(),7)]
+        return [corner1, corner2]
 
     def add_interest(self,intersected_layer,group, subgroup,summary_fields, secure):
         ''' add an interest to the report
