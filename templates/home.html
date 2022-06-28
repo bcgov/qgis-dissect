@@ -10,15 +10,14 @@
                   <label class="custom-control-label" for="{{ i['name']|replace(' ','_') }}_switch">Draw on map</label>
                 </div>
                 {% endif %}
+              </div>
+              {% if i['value'] is defined %}
+              <div class="article-metadata">
                 {% if i['secure']%}
-                <div class="custom-control custom-switch">
-                  <input type="checkbox" class="custom-control-input" id="{{ i['name']|replace(' ','_') }}_switch" disabled>
-                  <label class="custom-control-label" for="{{ i['name']|replace(' ','_') }}_switch">🔒 Draw on map</label>
-                </div>
+                <label>&nbsp🔒 Geometry protected</label>
                 {% endif %}
               </div>
               <h3><p class="article-title">{{ i['name'] }}</p></h3>
-              {% if i['value'] is defined %}
               <p class="list-group-item list-group-item-light">Intersect Summary: {{ i['value'] | round(1) }} {{ i['unit'] }}</p>
                 {%if i['field_summary'].items()|length > 0 %}
                 <table class="table table-striped">
@@ -53,7 +52,7 @@
   {% if failedLyrs|length > 0 %} 
   <div><h3>Failed layers</h></div>
     {% for i in failedLyrs %}
-          <article class="value {{ i['group']|replace(' ', '_') }} media content-section">
+          <article class="value {{ i['subgroup']|replace(' ', '_') }} media content-section">
             <div id= "value_data" class="media-body">
               <div class="article-metadata">
 

@@ -71,19 +71,24 @@ import logging
 
 MESSAGE_CATEGORY = 'Messages'
 
+# def enable_logging():
 try:
     temppath = os.environ['TEMP']
     logfile = os.path.join(temppath, 'dissect.log')
+    # global logger
     logger = logging.getLogger('dev')
-    # logger.handlers.pop(0)
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
     logger.setLevel(logging.DEBUG)
-    fileHandler = logging.FileHandler(logfile)
+    fileHandler = logging.FileHandler(logfile, delay=True)
     fileHandler.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
     fileHandler.setFormatter(formatter)
     logger.addHandler(fileHandler)
 except:
-    pass
+    QgsMessageLog.logMessage("Failed to enable logging", MESSAGE_CATEGORY, Qgis.Info)
+
+# enable_logging()
 
 def enable_remote_debugging(self):
     try:
@@ -127,12 +132,17 @@ class DissectAlg(QgsProcessingAlgorithm):
         s = QgsSettings()
         self.CONFIG_PATH = s.value('dissect/root')
        
+        # try:
+        # enable_logging()
+        # except: 
+        #     QgsMessageLog.logMessage("Logging not enabled", MESSAGE_CATEGORY, Qgis.Critical)
+
         logger.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
 
         try:
             enable_remote_debugging(self)
         except: 
-            QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Critical)
+            QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Info)
 
         self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"config.yml")
         self.protected_tables = self.get_protected_tables(self.SECURE_TABLES_CONFIG)
@@ -379,13 +389,9 @@ class DissectAlg(QgsProcessingAlgorithm):
         references to use_selected as aoiSource either only takes the selected
         features (or only passes on selected features during materialize()) 
         '''
-        use_selected = False
+        # use_selected = False
 
         try:
-            if use_selected == True and aoi_in.selectedFeatureCount()>0:
-                #export to in memory layer
-                aoi = processing.run("native:saveselectedfeatures", {'INPUT': aoi_in, 'OUTPUT': 'memory:'})['OUTPUT']
-            else:
                 ## TODO set up warning for many featured input
                 # if aoi_in.featureCount()>20:
                 #     msg = QMessageBox()
@@ -396,7 +402,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                 #     if not msg_rslt == QMessageBox.Ok:
                 #         QgsMessageLog.logMessage("User initiated exit",self.PLUGIN_NAME,Qgis.Critical)
                 #         return False
-                aoi = aoi_in.clone()
+            aoi = aoi_in.clone()
             if aoi.sourceCrs().isGeographic:
                 parameter = {'INPUT': aoi, 'TARGET_CRS': 'EPSG:3005','OUTPUT': 'memory:aoi'}
                 aoi = processing.run('native:reprojectlayer', parameter)['OUTPUT']
@@ -484,9 +490,11 @@ class DissectAlg(QgsProcessingAlgorithm):
                                             if selected_features.featureCount()>0:
                                                 # clip them
                                                 result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                if result.featureCount()>0:
-                                                    feedback.pushInfo(f"{layer_title} with ({result.featureCount()}) overlapping features")
-                                                    logger.debug(f"{layer_title} returned with ({result.featureCount()}) overlapping features")
+                                                fc = result.featureCount()
+                                                if fc > 0:
+                                                    feedback.pushInfo(f"{layer_title} with ({fc}) overlapping features")
+                                                    logger.debug(f"{layer_title} returned with ({fc}) overlapping features")
+                                                    fc = None
                                             else:
                                                 # return layer with no features
                                                 result = selected_features
@@ -672,7 +680,6 @@ class DissectAlg(QgsProcessingAlgorithm):
 
                                 aoi.removeSelection()
 
-                            # TODO understand this - it is only for BCGW? (or raster) why?
                             if len(feature_layer_lst) > 0:
                                 logger.debug(f'{layer_title} Merging feature_layer_lst, length: {len(feature_layer_lst)}')
                                 try:
@@ -727,12 +734,18 @@ class DissectAlg(QgsProcessingAlgorithm):
             # write report
             result = report_obj.report(output)
             logger.debug('Report produced')
+            feedback.pushInfo(f"Failed layers: {self.failed_layers}")
+            logger.debug(f"Failed layers: {self.failed_layers}")
             # clean up
             QgsProject.instance().removeMapLayer(aoi.id())
             report_obj = None
             del oq_helper
             logger.debug('Clean up complete')
-            feedback.pushInfo(f"Failed layers: {self.failed_layers}")
+            # logger = None
+            # try:
+            #     logger = None
+            # except:
+            #     feedback.pushInfo('Could not remove logger during clean up')
             result_msg = {}
             result_msg[self.OUTPUT] = output
             return result_msg
@@ -787,7 +800,6 @@ class report:
         self.template_path = template_path
         self.interests = []
         self.aoi = self.aoi_info(aoi)
-        self.aoi_layer = aoi # TODO remove? never used?
         self.failedLyrs = []
         
     def aoi_info(self,aoi):
@@ -926,22 +938,15 @@ class report:
         if layer.selectedFeatureCount()>0:
             options.onlySelectedFeatures = True
             logger.debug('V2GEOJSON: about to write (selected feat only)')
-            # TODO use .writeAsVectorFormatV3
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            # error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON",onlySelected=True)
             logger.debug('V2GEOJSON: json written')
         else:
             logger.debug('V2GEOJSON: about to write')
             error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            # error = QgsVectorFileWriter.writeAsVectorFormatV2(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            #error = QgsVectorFileWriter.writeAsVectorFormat(layer,geojson_path , "utf-8", destcrs, "GeoJSON")
             logger.debug('V2GEOJSON: json written')
 
         assert error[0] == 0, 'error not equal to 0'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
-        # TODO get feedback working within report class
-        # self.fb.pushInfo(f"export json --> {geojson_path}")
         logger.debug('V2GEOJSON: assert passed, about to load json')
         geojson = self.load_geojson(geojson_path)
         logger.debug('V2GEOJSON: json loaded')
