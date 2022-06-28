@@ -515,7 +515,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                                         else:
                                             feedback.pushInfo(f"Can not access: BCGW {layer_table}")
                                             self.failed_layers.append(layer_title)
-                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not access on BCGW')
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not access on BCGW - invalid schema/table or insufficient access')
                                             logger.debug(f"{layer_title} could not be accessed")
                                 elif (location is not None):
                                     if os.path.exists(location):
