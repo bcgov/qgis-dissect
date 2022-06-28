@@ -383,14 +383,6 @@ class DissectAlg(QgsProcessingAlgorithm):
             user = ''
             password = ''
 
-        # TODO clean up
-        '''
-        I'm pretty sure if we take this route we can delete all the
-        references to use_selected as aoiSource either only takes the selected
-        features (or only passes on selected features during materialize()) 
-        '''
-        # use_selected = False
-
         try:
                 ## TODO set up warning for many featured input
                 # if aoi_in.featureCount()>20:
