@@ -347,7 +347,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         # to uniquely identify the feature sink, and must be included in the
         # dictionary returned by the processAlgorithm function.
         
-        aoiSource = self.parameterAsSource(parameters, 'AOI', context) # TODO do we need to use this for input w ParameterFeatureSource?
+        aoiSource = self.parameterAsSource(parameters, 'AOI', context)
         aoi = aoiSource.materialize(QgsFeatureRequest())
         config_xls = self.parameterAsFile(parameters, 'XLS_CONFIG_IN', context)
         auth_method_id = self.parameterAsString(parameters, 'AUTH_CONFIG', context)
@@ -423,7 +423,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             i = (90 / estimated_count)
             feedback.pushInfo(f"Evaluating {estimated_count} interests")
             for tab_dict in parsed_input:
-                logger.debug(f'Processing tab_dict: {tab_dict}')
+                logger.debug(f'Processing tab_dict')
                 if feedback.isCanceled():
                     feedback.pushInfo('Process cancelled by user.')
                     return {}
@@ -454,245 +454,261 @@ class DissectAlg(QgsProcessingAlgorithm):
                             if layer_sql is None:
                                 layer_sql = ''
                             layer_expansion = dic['Attribute ID']
+                            # TODO remove feature_layer_lst
                             feature_layer_lst = [] # build empty layer list for each obj to be merged at end of unique feature cycle
-                            #QgsMessageLog.logMessage(layer_title,self.PLUGIN_NAME,Qgis.Info)
                             feedback.pushInfo('--- ' + str(layer_title) + ' ---')
                             logger.debug(f'{layer_title} location: {location}')
-                            features = aoi.getFeatures()
-                            for item in features: # iterate through each item in aoi
-                                logger.debug(f'{layer_title} - feature item {item}')
-                                if feedback.isCanceled():
-                                    feedback.pushInfo('Process cancelled by user.')
-                                    return {}
-                                aoi.select(item.id())
-                                if (location == 'BCGW'):
-                                    logger.debug(f'{layer_title} - is in BCGW')
-                                    assert layer_table is not None
-                                    # get overlapping features
-                                    has_table = oq_helper.has_table(layer_table)
-                                    if has_table == True:
-                                        has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
-                                    else:
-                                        has_spatial_rows = False
-                                    if has_table == True and has_spatial_rows == True:
-                                        logger.debug(f'{layer_title} - table and rows confirmed')
-                                        # get features from bbox
-                                        selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
+                            aoi.selectAll()
+                            if (location == 'BCGW'):
+                                logger.debug(f'{layer_title} - is in BCGW')
+                                assert layer_table is not None
+                                # get overlapping features
+                                has_table = oq_helper.has_table(layer_table)
+                                if has_table == True:
+                                    has_spatial_rows = oq_helper.has_spatial_rows(layer_table)
+                                else:
+                                    has_spatial_rows = False
+                                if has_table == True and has_spatial_rows == True:
+                                    logger.debug(f'{layer_title} - table and rows confirmed')
+                                    # get features from bbox
+                                    selected_features = oq_helper.create_layer_anyinteract(overlay_layer=aoi,layer_name=layer_title,db_table=layer_table,sql=layer_sql)
+                                    try:
+                                        if selected_features.featureCount()>0:
+                                            # clip them
+                                            result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                            fc = result.featureCount()
+                                            feedback.pushInfo(f"{layer_title}: ({fc}) overlapping features found")
+                                            logger.debug(f"{layer_title}: ({fc}) overlapping features found")
+                                            fc = None
+                                        else:
+                                            # return layer with no features
+                                            result = selected_features
+                                            feedback.pushInfo(f"{layer_title}: (0) overlapping features found")
+                                            logger.debug(f"{layer_title} returned no overlapping features")
+                                    except:
                                         try:
-                                            if selected_features.featureCount()>0:
-                                                # clip them
-                                                result = processing.run("native:clip", {'INPUT':selected_features, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                fc = result.featureCount()
-                                                if fc > 0:
-                                                    feedback.pushInfo(f"{layer_title} with ({fc}) overlapping features")
-                                                    logger.debug(f"{layer_title} returned with ({fc}) overlapping features")
-                                                    fc = None
-                                            else:
-                                                # return layer with no features
-                                                result = selected_features
-                                                logger.debug(f"{layer_title} returned no overlapping features")
+                                            logger.debug(f"{layer_title} fixing geometry")
+                                            f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
+                                            result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                            logger.debug(f"{layer_title} geometry fixed and clipped")
                                         except:
-                                            try:
-                                                logger.debug(f"{layer_title} fixing geometry")
-                                                f_layer = processing.run("native:fixgeometries", {'INPUT':selected_features,'OUTPUT':'memory:{layer_title}'})['OUTPUT']
-                                                result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                logger.debug(f"{layer_title} geometry fixed and clipped")
-                                            except:
-                                                self.failed_layers.append(layer_title)
-                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='BCGW - data/geometry issue')
-                                                feedback.pushInfo(f"Error in accessing {layer_title}")
-                                        if result is not None:
-                                            # feedback.pushInfo(f"result type {type(result)}")
-                                            # feedback.pushInfo(f"clip result count: {result.featureCount()}")
-                                            feature_layer_lst.append(result)
-                                            logger.debug(f"{layer_title} appended to feature_layer_lst")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='BCGW - data/geometry issue')
+                                            feedback.pushInfo(f"Error in accessing {layer_title}")
+                                    if result is not None:
+                                        # feedback.pushInfo(f"result type {type(result)}")
+                                        # feedback.pushInfo(f"clip result count: {result.featureCount()}")
+                                        feature_layer_lst.append(result)
+                                        logger.debug(f"{layer_title} appended to feature_layer_lst")
+                                else:
+                                    if has_table:
+                                        feedback.pushInfo(f"No data in table: BCGW {layer_table}")
+                                        self.failed_layers.append(layer_title)
+                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='No data in table: BCGW')
+                                        logger.debug(f"{layer_title} contains no rows")
                                     else:
-                                        if has_table:
-                                            feedback.pushInfo(f"No data in table: BCGW {layer_table}")
-                                            self.failed_layers.append(layer_title)
-                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='No data in table: BCGW')
-                                            logger.debug(f"{layer_title} contains no rows")
-                                        else:
-                                            feedback.pushInfo(f"Can not access: BCGW {layer_table}")
-                                            self.failed_layers.append(layer_title)
+                                        feedback.pushInfo(f"Can not access: BCGW {layer_table}")
+                                        self.failed_layers.append(layer_title)
+                                        if layer_table not in self.protected_tables:
                                             report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not access on BCGW - invalid schema/table or insufficient access')
-                                            logger.debug(f"{layer_title} could not be accessed")
-                                elif (location is not None):
-                                    if os.path.exists(location):
-                                        logger.debug(f'{layer_title} exists, starting processing')
-                                        rlayer = None
-                                        vlayer = None
-                                        filename, file_extension = os.path.splitext(location)
-                                        if len(layer_sql)>0:
-                                            location_sql = f"|subset={layer_sql}"
                                         else:
-                                            location_sql = ""
-                                        coverage = False
-                                        if os.path.isdir(location):
-                                            dir_files = os.listdir(location)
-                                            for f in dir_files:
-                                                if ".adf" in f:
-                                                    coverage = True
-                                                    break
-                                        if coverage is True:
-                                            # load coverage
-                                            for f in os.listdir(location):
-                                                if f in ['arc.adf','pal.adf','lab.adf','cnt.adf']:
-                                                    vlayer = QgsVectorLayer(os.path.join(location,f), layer_title, "ogr")
-                                                if f == 'hdr.adf':
-                                                    rlayer = QgsRasterLayer(os.path.join(location,f),layer_title)
-                                        elif file_extension in ['.shp','.kml','.kmz','.geojson']:
-                                            file_location = location + location_sql
-                                            vlayer = QgsVectorLayer(file_location, layer_title, "ogr")
-                                            if vlayer.isValid() == False:
-                                                feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
-                                                self.failed_layers.append(layer_title)
-                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid input')
-                                        elif file_extension in ['.tif']:
-                                            rlayer = QgsRasterLayer(location,layer_title)
-                                            if rlayer.isValid() == False:
-                                                feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
-                                                self.failed_layers.append(layer_title)
-                                                report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid raster input')
-                                        elif file_extension in ['.gdb','gpkg']:
-                                            ogr_string = f"{location}|layername={layer_table}{location_sql}"
-                                            vlayer = QgsVectorLayer(ogr_string, layer_title, "ogr")
-                                        else:
-                                            feedback.pushInfo(f"No loading function for {layer_title}: {location}")
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='🔒 Could not access on BCGW (protected table, likely insufficient access)')
+                                        logger.debug(f"{layer_title} could not be accessed")
+                            elif (location is not None): # non-db file path
+                                if os.path.exists(location):
+                                    logger.debug(f'{layer_title} exists, starting processing')
+                                    rlayer = None
+                                    vlayer = None
+                                    filename, file_extension = os.path.splitext(location)
+                                    if len(layer_sql)>0:
+                                        location_sql = f"|subset={layer_sql}"
+                                    else:
+                                        location_sql = ""
+                                    coverage = False
+                                    if os.path.isdir(location):
+                                        dir_files = os.listdir(location)
+                                        for f in dir_files:
+                                            if ".adf" in f:
+                                                coverage = True
+                                                break
+                                    if coverage is True:
+                                        # load coverage
+                                        for f in os.listdir(location):
+                                            if f in ['arc.adf','pal.adf','lab.adf','cnt.adf']:
+                                                vlayer = QgsVectorLayer(os.path.join(location,f), layer_title, "ogr")
+                                            if f == 'hdr.adf':
+                                                rlayer = QgsRasterLayer(os.path.join(location,f),layer_title)
+                                    elif file_extension in ['.shp','.kml','.kmz','.geojson']:
+                                        file_location = location + location_sql
+                                        vlayer = QgsVectorLayer(file_location, layer_title, "ogr")
+                                        if vlayer.isValid() == False:
+                                            feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
                                             self.failed_layers.append(layer_title)
-                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path or input type')
-                                        if vlayer is not None:
-                                            logger.debug(f'{layer_title} is vector layer, starting processing')
-                                            try:
-                                                if vlayer.isValid():
-                                                    vlayer.setSubsetString(layer_sql)
-                                                    if vlayer.featureCount()>0:
-                                                        logger.debug(f'{layer_title} has valid geometry')
-                                                        result = processing.run("native:clip", {'INPUT':vlayer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                                        logger.debug(f'{layer_title} clipped')
-                                                    else:
-                                                        feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
-                                                else:
-                                                    feedback.pushInfo(f"Vector layer invalid {layer_title}: {location} | {layer_table}({location_sql})")
-                                            except:
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid input')
+                                    elif file_extension in ['.tif']:
+                                        rlayer = QgsRasterLayer(location,layer_title)
+                                        if rlayer.isValid() == False:
+                                            feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
+                                            self.failed_layers.append(layer_title)
+                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid raster input')
+                                    elif file_extension in ['.gdb','gpkg']:
+                                        ogr_string = f"{location}|layername={layer_table}{location_sql}"
+                                        vlayer = QgsVectorLayer(ogr_string, layer_title, "ogr")
+                                    else:
+                                        feedback.pushInfo(f"No loading function for {layer_title}: {location}")
+                                        self.failed_layers.append(layer_title)
+                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path or input type')
+                                    if vlayer is not None:
+                                        logger.debug(f'{layer_title} is vector layer, starting processing')
+                                        try:
+                                            if vlayer.isValid():
                                                 vlayer.setSubsetString(layer_sql)
                                                 if vlayer.featureCount()>0:
-                                                    logger.debug(f'{layer_title} has invalid geometry, fixing...')
-                                                    f_layer = processing.run("native:fixgeometries", {'INPUT':vlayer,'OUTPUT':'memory:{layer_title}fix'})['OUTPUT']
-                                                    logger.debug(f'{layer_title} geo fixed')
-                                                    result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                    logger.debug(f'{layer_title} has valid geometry')
+                                                    result = processing.run("native:clip", {'INPUT':vlayer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
                                                     logger.debug(f'{layer_title} clipped')
                                                 else:
                                                     feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
-                                            finally:
-                                                if result is not None:
-                                                    feature_layer_lst.append(result)
-                                                    logger.debug(f'{layer_title} added to feature_layer_lst')
-                                                    feedback.pushInfo(f"{layer_title}: {result.featureCount()} overlapping features found")
-                                        elif rlayer is not None:
-                                            enable_raster = False
-                                            # work below for feature to report on raster layers. This is disabled and
-                                            # TODO: build raster classification algorithm
-                                            if enable_raster is False:
-                                                print ("Raster processing is not yet supported/enabled")
-                                            if enable_raster:
-                                                print ("Starting Raster process")
-                                                # clp_raster = processing.run("gdal:cliprasterbymasklayer", 
-                                                #     {'INPUT':rlayer,
-                                                #     'MASK':QgsProcessingFeatureSourceDefinition(aoi.id(), True),
-                                                #     'SOURCE_CRS':QgsCoordinateReferenceSystem('EPSG:3005'),
-                                                #     'TARGET_CRS':QgsCoordinateReferenceSystem('EPSG:3005'),
-                                                #     'NODATA':None,
-                                                #     'ALPHA_BAND':False,
-                                                #     'CROP_TO_CUTLINE':True,
-                                                #     'KEEP_RESOLUTION':False,
-                                                #     'SET_RESOLUTION':False,
-                                                #     'X_RESOLUTION':None,'Y_RESOLUTION':None,
-                                                #     'MULTITHREADING':False,
-                                                #     'OPTIONS':'',
-                                                #     'DATA_TYPE':0,
-                                                #     'EXTRA':'',
-                                                #     'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
-                                                clp_raster = self.gdal_raster_clip(rlayer,aoi)
-                                                dbf = location + ".vat.dbf"
-                                                vlookup = {}
-                                                if os.path.exists(dbf):
-                                                    dbfdriver = ogr.GetDriverByName("ESRI Shapefile")
-                                                    dbfdatasource = dbfdriver.Open(dbf,0)
-                                                    dbflayer = dbfdatasource.GetLayer()
-                                                    dbflayer_def = dbflayer.GetLayerDefn()
-                                                    fields = [dbflayer_def.GetFieldDefn(i).GetName() for i in range(dbflayer_def.GetFieldCount())]
-                                                    assert value_field in fields
-                                                    for f in dbflayer:
-                                                        vlookup[f.GetField('VALUE')]= f.GetField(value_field)
-                                                # This gdal:polygonize seems to be an issue in QGIS <= 3.22 hopefully fixed at a later date
-                                                # vector = processing.run("gdal:polygonize", 
-                                                #     {'INPUT':clp_raster,'BAND':1,'FIELD':'DN','EIGHT_CONNECTEDNESS':False,
-                                                #     'EXTRA':'','OUTPUT':'TEMPORARY_OUTPUT'})
-                                                # Work around below uses gdal directly
-                                                shp = self.gdal_polygonize(clp_raster)
-                                                shp_vlayer = QgsVectorLayer(shp, layer_title, "ogr")
-                                                # end workaround
-                                                if len(vlookup)>0:
-                                                    field_length = len(max(vlookup.values()))
-                                                    vector = processing.run("native:addfieldtoattributestable", 
-                                                        {'INPUT':shp_vlayer,
-                                                        'FIELD_NAME':value_field,
-                                                        'FIELD_TYPE':2,
-                                                        'FIELD_LENGTH':field_length,
-                                                        'FIELD_PRECISION':0,
-                                                        'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
-                                                    findex = vector.fields().indexFromName(value_field)
-                                                    assert findex != -1
-                                                    for feat in vector.getFeatures():
-                                                        vector.changeAttributeValue(feat.id(),findex,vlookup[feat['DN']])
-                                                    vector.commitChanges()
-                                                else:
-                                                    value_field = 'DN'
-                                                    vector = shp_vlayer
-                                                if (re.search(r'\bValue\b', layer_sql) or re.search(r'\bValue\b', layer_sql)):
-                                                    layer_sql = layer_sql.replace("VALUE ","DN").replace("Value ","DN")
-                                                if len(layer_sql)>0:
-                                                    vector.setSubsetString(layer_sql)
-                                                if vector.featureCount()>0:
-                                                    result = vector
-                                                else:
-                                                    result = None
-                                                # end raster processing
-                                                # QgsMessageLog.logMessage("No raster summary function",self.PLUGIN_NAME,Qgis.Warning)
-
-                                            if result is not None:
-                                                feature_layer_lst.append(result)
                                                 
-                                    else:
-                                        # os.path.exists(location) == False
-                                        feedback.pushInfo(f"Can not make valid: {location}")
-                                        self.failed_layers.append(layer_title)
-                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path')
+                                            else:
+                                                feedback.pushInfo(f"Vector layer invalid {layer_title}: {location} | {layer_table}({location_sql})")
+                                        except:
+                                            vlayer.setSubsetString(layer_sql)
+                                            if vlayer.featureCount()>0:
+                                                logger.debug(f'{layer_title} has invalid geometry, fixing...')
+                                                f_layer = processing.run("native:fixgeometries", {'INPUT':vlayer,'OUTPUT':'memory:{layer_title}fix'})['OUTPUT']
+                                                logger.debug(f'{layer_title} geo fixed')
+                                                result = processing.run("native:clip", {'INPUT':f_layer, 'OVERLAY': QgsProcessingFeatureSourceDefinition(aoi.id(), True), 'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
+                                                logger.debug(f'{layer_title} clipped')
+                                            else:
+                                                feedback.pushInfo(f"Definintion Query for {layer_title}: {location} | {layer_sql}")
+                                        
+                                        finally:
+                                            if result is not None:
+                                                if result.crs().authid() != 'EPSG:3005':
+                                                    try:
+                                                        result = processing.run('native:reprojectlayer', {'INPUT': result, 'TARGET_CRS': 'EPSG:3005', 'OUTPUT': f'memory:{layer_title}_BCAlbers'})['OUTPUT']
+                                                        logger.debug(f'{layer_title} reprojected to 3005')
+                                                    except:
+                                                        logger.error(f'{layer_title} could not reproject to 3005')
+                                                        self.failed_layers.append(layer_title) 
+                                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not reproject result to BC Albers (try reprojecting input)')
+                                                        break
+                                                feature_layer_lst.append(result)
+                                                logger.debug(f'{layer_title} added to feature_layer_lst')
+                                                feedback.pushInfo(f"{layer_title}: {result.featureCount()} overlapping features found")
+                                    elif rlayer is not None:
+                                        enable_raster = False
+                                        # work below for feature to report on raster layers. This is disabled and
+                                        # TODO: build raster classification algorithm
+                                        if enable_raster is False:
+                                            print ("Raster processing is not yet supported/enabled")
+                                        if enable_raster:
+                                            print ("Starting Raster process")
+                                            # clp_raster = processing.run("gdal:cliprasterbymasklayer", 
+                                            #     {'INPUT':rlayer,
+                                            #     'MASK':QgsProcessingFeatureSourceDefinition(aoi.id(), True),
+                                            #     'SOURCE_CRS':QgsCoordinateReferenceSystem('EPSG:3005'),
+                                            #     'TARGET_CRS':QgsCoordinateReferenceSystem('EPSG:3005'),
+                                            #     'NODATA':None,
+                                            #     'ALPHA_BAND':False,
+                                            #     'CROP_TO_CUTLINE':True,
+                                            #     'KEEP_RESOLUTION':False,
+                                            #     'SET_RESOLUTION':False,
+                                            #     'X_RESOLUTION':None,'Y_RESOLUTION':None,
+                                            #     'MULTITHREADING':False,
+                                            #     'OPTIONS':'',
+                                            #     'DATA_TYPE':0,
+                                            #     'EXTRA':'',
+                                            #     'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
+                                            clp_raster = self.gdal_raster_clip(rlayer,aoi)
+                                            dbf = location + ".vat.dbf"
+                                            vlookup = {}
+                                            if os.path.exists(dbf):
+                                                dbfdriver = ogr.GetDriverByName("ESRI Shapefile")
+                                                dbfdatasource = dbfdriver.Open(dbf,0)
+                                                dbflayer = dbfdatasource.GetLayer()
+                                                dbflayer_def = dbflayer.GetLayerDefn()
+                                                fields = [dbflayer_def.GetFieldDefn(i).GetName() for i in range(dbflayer_def.GetFieldCount())]
+                                                assert value_field in fields
+                                                for f in dbflayer:
+                                                    vlookup[f.GetField('VALUE')]= f.GetField(value_field)
+                                            # This gdal:polygonize seems to be an issue in QGIS <= 3.22 hopefully fixed at a later date
+                                            # vector = processing.run("gdal:polygonize", 
+                                            #     {'INPUT':clp_raster,'BAND':1,'FIELD':'DN','EIGHT_CONNECTEDNESS':False,
+                                            #     'EXTRA':'','OUTPUT':'TEMPORARY_OUTPUT'})
+                                            # Work around below uses gdal directly
+                                            shp = self.gdal_polygonize(clp_raster)
+                                            shp_vlayer = QgsVectorLayer(shp, layer_title, "ogr")
+                                            # end workaround
+                                            if len(vlookup)>0:
+                                                field_length = len(max(vlookup.values()))
+                                                vector = processing.run("native:addfieldtoattributestable", 
+                                                    {'INPUT':shp_vlayer,
+                                                    'FIELD_NAME':value_field,
+                                                    'FIELD_TYPE':2,
+                                                    'FIELD_LENGTH':field_length,
+                                                    'FIELD_PRECISION':0,
+                                                    'OUTPUT':'TEMPORARY_OUTPUT'})['OUTPUT']
+                                                findex = vector.fields().indexFromName(value_field)
+                                                assert findex != -1
+                                                for feat in vector.getFeatures():
+                                                    vector.changeAttributeValue(feat.id(),findex,vlookup[feat['DN']])
+                                                vector.commitChanges()
+                                            else:
+                                                value_field = 'DN'
+                                                vector = shp_vlayer
+                                            if (re.search(r'\bValue\b', layer_sql) or re.search(r'\bValue\b', layer_sql)):
+                                                layer_sql = layer_sql.replace("VALUE ","DN").replace("Value ","DN")
+                                            if len(layer_sql)>0:
+                                                vector.setSubsetString(layer_sql)
+                                            if vector.featureCount()>0:
+                                                result = vector
+                                            else:
+                                                result = None
+                                            # end raster processing
+                                            # QgsMessageLog.logMessage("No raster summary function",self.PLUGIN_NAME,Qgis.Warning)
 
-                                aoi.removeSelection()
+                                        if result is not None:
+                                            feature_layer_lst.append(result)
+                                            
+                                else:
+                                    # os.path.exists(location) == False
+                                    feedback.pushInfo(f"Can not make valid: {location}")
+                                    self.failed_layers.append(layer_title)
+                                    report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path')
+
+                            aoi.removeSelection()
 
                             if len(feature_layer_lst) > 0:
-                                logger.debug(f'{layer_title} Merging feature_layer_lst, length: {len(feature_layer_lst)}')
                                 try:
+                                    for feat in feature_layer_lst:
+                                        assert feat.crs().authid() == 'EPSG:3005', 'Feat in feature_layer_lst not 3005'
+                                        assert feat is not None, 'Feature is none'
                                     if len(feature_layer_lst)>1:
-                                        result = processing.run("native:mergevectorlayers", {'LAYERS':feature_layer_lst, 'CRS':QgsCoordinateReferenceSystem('EPSG:3005'),'OUTPUT':f'memory:{layer_title}'})['OUTPUT']
-                                        result.setCrs(QgsCoordinateReferenceSystem('EPSG:3005'),True)
+                                        logger.debug(f'{layer_title} Merging results from multiple AOI features, length: {len(feature_layer_lst)}')
+                                        result = processing.run("native:mergevectorlayers", {'LAYERS':feature_layer_lst, 'OUTPUT':f'memory:{layer_title}_m'})['OUTPUT']
+                                        logger.debug(f'{layer_title} Merged results')
                                     else:
                                         result = feature_layer_lst[0]
                                     if result.crs().authid() != 'EPSG:3005':
+                                        logger.debug(f'{layer_title} reprojecting results')
                                         result = processing.run('native:reprojectlayer', {'INPUT': result, 'TARGET_CRS': 'EPSG:3005', 'OUTPUT': f'memory:{layer_title}'})['OUTPUT']
                                     idx = result.fields().indexFromName( 'SE_ANNO_CAD_DATA' )
                                     if idx != (-1):
                                         res = result.dataProvider().deleteAttributes([idx])
                                         result.updateFields()
-                                except:
+                                except Exception as e:
+                                    logger.critical(f"Could not merge: {str(e)}")
                                     feedback.pushInfo(f"Could not merge results for {layer_title}")
+                                
+                                    
                             
                             # test new report
                             if (layer_expansion is None):
                                 layer_expansion = ''
                             if len(layer_expansion)>0:
+                                logger.debug(f'{layer_title} Parsing attribute IDs')
                                 # summary_fields = layer_expansion.split(',')
                                 summary_fields = [f.strip() for f in layer_expansion.split(',')]
                             else:
@@ -702,18 +718,18 @@ class DissectAlg(QgsProcessingAlgorithm):
                                 feedback.pushInfo(f"{layer_title}: {delta_time} seconds")
                                 logger.debug(f'{layer_title}: {delta_time} seconds to process')
                                 if result is not None:      
-                                    if result.featureCount()>0:
-                                        if self.add_interests is True:
-                                            logger.debug(f'{layer_title}: adding to map')
-                                            QgsProject.instance().addMapLayer(result)
-                                            self.tool_map_layers.append(result.id())
-                                            logger.debug(f'{layer_title}: added to map')
                                     if layer_table not in self.protected_tables:
                                         report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=False)
                                         logger.debug(f'{layer_title}: added to report (non-secure)')
                                     else:
                                         report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=True)
                                         logger.debug(f'{layer_title}: added to report (secure)')
+                                    if result.featureCount()>0:
+                                        if self.add_interests is True:
+                                            logger.debug(f'{layer_title}: adding to map')
+                                            QgsProject.instance().addMapLayer(result)
+                                            self.tool_map_layers.append(result.id())
+                                            logger.debug(f'{layer_title}: added to map')
                                 ## TODO progress bar
                                 # p = progress.value()
                                 # progress.setValue(p+i)
@@ -800,10 +816,7 @@ class report:
         a = 0.0
         if isinstance(aoi, QgsVectorLayer) is False:
             return None
-        if aoi.selectedFeatureCount()>0:
-            features = aoi.selectedFeatures()
-        else:
-            features = aoi.getFeatures()
+        features = aoi.getFeatures()
         for f in features:
             geom = f.geometry()
             geom_type = QgsWkbTypes.displayString(geom.wkbType())
@@ -927,15 +940,9 @@ class report:
         options.fileEncoding = "utf-8"
         context = QgsProject.instance().transformContext()
         options.ct = QgsCoordinateTransform(layer.sourceCrs() ,destcrs,context)
-        if layer.selectedFeatureCount()>0:
-            options.onlySelectedFeatures = True
-            logger.debug('V2GEOJSON: about to write (selected feat only)')
-            error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            logger.debug('V2GEOJSON: json written')
-        else:
-            logger.debug('V2GEOJSON: about to write')
-            error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
-            logger.debug('V2GEOJSON: json written')
+        logger.debug('V2GEOJSON: about to write')
+        error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
+        logger.debug('V2GEOJSON: json written')
 
         assert error[0] == 0, 'error not equal to 0'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
