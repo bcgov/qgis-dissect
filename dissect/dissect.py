@@ -603,7 +603,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                                                         break
                                                 feature_layer_lst.append(result)
                                                 logger.debug(f'{layer_title} added to feature_layer_lst')
-                                                feedback.pushInfo(f"{layer_title}: {result.featureCount()} overlapping features found")
+                                                feedback.pushInfo(f"{layer_title}: ({result.featureCount()}) overlapping features found")
                                     elif rlayer is not None:
                                         enable_raster = False
                                         # work below for feature to report on raster layers. This is disabled and
