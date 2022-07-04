@@ -21,16 +21,13 @@ A plugin reporting overlapping GIS datasets
 
 ## Usage
 1. Start QGIS
-2. Add a file that contains your area of interest <!-- and if needed make a selection from the file.  -->
-3. Open the Processing Toolbox (CTRL+ALT+T) and select `dissect_alg` from Scripts at the bottom of the toolbox
-    - it may be necessary to reload scripts following installation - click 'Options' (wrench) and then OK
-
-![Processing tool box - use the wrench to reload scripts](https://user-images.githubusercontent.com/38586679/172197256-375e4987-6d51-44ea-840e-a7e92e742434.png)
-
-4. Select your area of interest layer from the dropdown    <!-- - If your AOI is a selection subset check the 'Use selected features' checkbox -->
-5. Select your data configuration .xlsx file (using ... or by typing in path)
-6. Fill out your database credentials<!-- 6. Activate the 'Add overlapping interests to QGIS radio' button if desired -->
-7. Set output destination
+2. Add a file that contains your area of interest polygon (or create a new temp layer ![add temporary scratch layer](https://user-images.githubusercontent.com/38586679/177222992-26296bd0-e5fb-4f2f-9a70-5b1aa700de27.png). If necessary, select features within the AOI.
+3. Open the Processing Toolbox (CTRL+ALT+T) and select `dissect` from Scripts at the bottom of the toolbox
+![Processing toolbox](https://user-images.githubusercontent.com/38586679/177223206-ca622e66-5db8-4a51-af80-df61e8caf1df.png)
+4. Select your area of interest from the dropdown (check 'Selected features only' if necessary)
+5. Add your database credentials (+). Give the configuration a name and enter username and password. This login will be stored in an encrypted file within your QGIS profile.
+6. If desired, check 'Add overlapping interests to map' to have intersecting features added in QGIS (including all original attributes).
+7. Advanced Parameters include setting the interest configuration file and database settings. Default values for these parameters can be set in Settings/Options/Advanced/dissect.
 8. Run!
 
 ## Contributing
