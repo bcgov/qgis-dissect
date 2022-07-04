@@ -62,6 +62,7 @@ import tempfile
 import time
 import yaml
 import re
+import uuid
 from PyQt5.QtWidgets import QAction, QMessageBox, QProgressBar,QDockWidget,QTabWidget
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
@@ -131,14 +132,20 @@ class DissectAlg(QgsProcessingAlgorithm):
     def config(self):
         s = QgsSettings()
         self.CONFIG_PATH = s.value('dissect/root')
-       
+        TEST_MODE = False
+        if TEST_MODE:
+            self.CONFIG_PATH = x
+        logger.debug(f'TEST_MODE is equal to: {TEST_MODE}')
+        logger.debug(f'CONFIG_PATH is equal to: {self.CONFIG_PATH}')
+
         # try:
         # enable_logging()
         # except: 
         #     QgsMessageLog.logMessage("Logging not enabled", MESSAGE_CATEGORY, Qgis.Critical)
 
+        self.startTime = time.time()
         logger.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
-
+        
         try:
             enable_remote_debugging(self)
         except: 
@@ -719,25 +726,28 @@ class DissectAlg(QgsProcessingAlgorithm):
                                 logger.debug(f'{layer_title}: {delta_time} seconds to process')
                                 if result is not None:      
                                     if layer_table not in self.protected_tables:
-                                        report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=False)
+                                        interest = report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=False)
                                         logger.debug(f'{layer_title}: added to report (non-secure)')
+                                        if result.featureCount()>0:
+                                            if self.add_interests is True:
+                                                logger.debug(f'{layer_title}: adding to map')
+                                                with open(interest['geojson_path']) as f:
+                                                    geojson_lyr = QgsVectorLayer(interest['geojson_path'],layer_title,"ogr")
+                                                QgsProject.instance().addMapLayer(geojson_lyr)
+                                                self.tool_map_layers.append(result.id())
+                                                logger.debug(f'{layer_title}: added to map')
                                     else:
-                                        report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=True)
+                                        interest = report_obj.add_interest(result,key,layer_subgroup,summary_fields,secure=True)
                                         logger.debug(f'{layer_title}: added to report (secure)')
-                                    if result.featureCount()>0:
-                                        if self.add_interests is True:
-                                            logger.debug(f'{layer_title}: adding to map')
-                                            QgsProject.instance().addMapLayer(result)
-                                            self.tool_map_layers.append(result.id())
-                                            logger.debug(f'{layer_title}: added to map')
                                 ## TODO progress bar
                                 # p = progress.value()
                                 # progress.setValue(p+i)
-                            except:
+                            except Exception as e:
                                 feedback.pushInfo(f"Failed to add {layer_title} to map/report")
-                                logging.error(f'{layer_title}: failed to add to map/report')
+                                logger.error(f'{layer_title}: failed to add to map/report - {str(e)}')
                             finally:
                                 result = None
+                                interest = None
 
             # write report
             result = report_obj.report(output)
@@ -749,6 +759,8 @@ class DissectAlg(QgsProcessingAlgorithm):
             report_obj = None
             del oq_helper
             logger.debug('Clean up complete')
+            runtime = round(time.time()-self.startTime,1)
+            logger.debug(f'Runtime: {runtime} seconds')
             # logger = None
             # try:
             #     logger = None
@@ -766,6 +778,7 @@ class DissectAlg(QgsProcessingAlgorithm):
             report_obj = None
             del oq_helper
             raise QgsProcessingException(sys.exc_info())
+            logger.error(f'Exception occured: {str(e)}')
             
 
         '''
@@ -803,6 +816,8 @@ class report:
     TEMPLATE_RELATIVE_PATH = 'templates'
 
     def __init__(self,aoi,template_path,feedback):
+        self.uuid = str(uuid.uuid4())
+        logger.debug(f'Report uuid set: {self.uuid}')
         self.fb = feedback
         assert os.path.exists(os.path.join(template_path,self.TEMPLATE_RELATIVE_PATH))
         self.template_path = template_path
@@ -822,7 +837,16 @@ class report:
             geom_type = QgsWkbTypes.displayString(geom.wkbType())
             assert geom_type in ['Polygon','MultiPolygon','Polygon25D','MultiPolygonZ'], "Area of interestest must be polygonal"
             a += geom.area()
-        geojson = self.vectorlayer_to_geojson(aoi)
+        file_name = aoi.name().replace(' ','_').replace('.','_') + ".geojson"
+        file_name = file_name.replace('/','_')
+        file_name = file_name.replace('\\','_')
+        logger.debug('V2GEOJSON: geojson name built')
+        temp_path = os.environ['TEMP']
+        geojson_path = os.path.join(temp_path,self.uuid,file_name)
+        logger.debug('V2GEOJSON: geojson path built')
+        geojson_dir = os.path.dirname(geojson_path)
+        os.makedirs(geojson_dir)
+        geojson = self.vectorlayer_to_geojson(aoi, geojson_path)
         bb = self.get_bb(aoi,4326)
         # bb = self.get_bb(aoi,4326)
         name = aoi.name()
@@ -912,39 +936,54 @@ class report:
             interest['count']=0
         if intersected_layer.featureCount() > 0:
             summary = []
+            if len(summary_dict)>0:
+                try:
+                    import operator
+                    sorted_tuples = sorted(summary_dict.items(),reverse=True) # sort by key name
+                    summary_dict = {k: v for k, v in sorted_tuples}
+                except:
+                    pass
             interest['field_summary'] = summary_dict
             interest['field_names_summary'] = field_string
             if secure is True:
                 interest['geojson'] = None   
+                interest['geojson_path'] = None   
             else: 
                 logger.debug(f'Exporting {intersected_layer} to geojson')
-                interest['geojson'] = self.vectorlayer_to_geojson(intersected_layer)
+                file_name = intersected_layer.name().replace(' ','_').replace('.','_') + ".geojson"
+                file_name = file_name.replace('/','_')
+                file_name = file_name.replace('\\','_')
+                logger.debug('V2GEOJSON: geojson name built')
+                temp_path = os.environ['TEMP']
+                geojson_path = os.path.join(temp_path,self.uuid,file_name)
+                interest['geojson_path'] = geojson_path
+                logger.debug('V2GEOJSON: geojson path built')
+                interest['geojson'] = self.vectorlayer_to_geojson(intersected_layer,geojson_path)
                 logger.debug('Exported to geojson, geojson returned')
         else:
             interest['geojson'] = None
+            interest['geojson_path'] = None   
             interest['field_summary'] = []
         self.interests.append(interest)
         logger.debug('Interest appended to interests')
-    def vectorlayer_to_geojson(self,layer):
-        '''Export QgsVectorlayer to temp geojson'''
-        file_name = layer.name().replace(' ','_').replace('.','_') + ".geojson"
-        file_name = file_name.replace('/','_')
-        file_name = file_name.replace('\\','_')
-        logger.debug('V2GEOJSON: geojson name built')
-        temp_path = os.environ['TEMP']
-        geojson_path = os.path.join(temp_path,file_name)
-        logger.debug('V2GEOJSON: geojson path built')
+        return interest
+    def vectorlayer_to_geojson(self,layer,geojson_path):
+        '''Export QgsVectorlayer to temp geojson'''       
+        # logger.debug('V2GEOJSON: checking if same filename exists')
+        # if os.path.exists(geojson_path):
+        #     logger.debug('V2GEOJSON: removing existing file')
+        #     os.remove(geojson_path)
         destcrs = QgsCoordinateReferenceSystem("EPSG:4326")
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.driverName = "GeoJSON"
         options.fileEncoding = "utf-8"
+        # options.ActionOnExistingFile = QgsVectorFileWriter.CreateOrOverwriteFile
         context = QgsProject.instance().transformContext()
         options.ct = QgsCoordinateTransform(layer.sourceCrs() ,destcrs,context)
         logger.debug('V2GEOJSON: about to write')
         error = QgsVectorFileWriter.writeAsVectorFormatV3(layer=layer,fileName=geojson_path, transformContext=context,options=options)
         logger.debug('V2GEOJSON: json written')
-
-        assert error[0] == 0, 'error not equal to 0'
+        assert error[0] == 0, f'error not equal to 0, error: {error}'
         assert error[0] == QgsVectorFileWriter.NoError, 'error not equal to NoError'
         logger.debug('V2GEOJSON: assert passed, about to load json')
         geojson = self.load_geojson(geojson_path)
