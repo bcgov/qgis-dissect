@@ -132,14 +132,20 @@ class DissectAlg(QgsProcessingAlgorithm):
     def config(self):
         s = QgsSettings()
         self.CONFIG_PATH = s.value('dissect/root')
-       
+        TEST_MODE = False
+        if TEST_MODE:
+            self.CONFIG_PATH = x
+        logger.debug(f'TEST_MODE is equal to: {TEST_MODE}')
+        logger.debug(f'CONFIG_PATH is equal to: {self.CONFIG_PATH}')
+
         # try:
         # enable_logging()
         # except: 
         #     QgsMessageLog.logMessage("Logging not enabled", MESSAGE_CATEGORY, Qgis.Critical)
 
+        self.startTime = time.time()
         logger.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
-
+        
         try:
             enable_remote_debugging(self)
         except: 
@@ -753,6 +759,8 @@ class DissectAlg(QgsProcessingAlgorithm):
             report_obj = None
             del oq_helper
             logger.debug('Clean up complete')
+            runtime = round(time.time()-self.startTime,1)
+            logger.debug(f'Runtime: {runtime} seconds')
             # logger = None
             # try:
             #     logger = None
@@ -928,6 +936,13 @@ class report:
             interest['count']=0
         if intersected_layer.featureCount() > 0:
             summary = []
+            if len(summary_dict)>0:
+                try:
+                    import operator
+                    sorted_tuples = sorted(summary_dict.items(),reverse=True) # sort by key name
+                    summary_dict = {k: v for k, v in sorted_tuples}
+                except:
+                    pass
             interest['field_summary'] = summary_dict
             interest['field_names_summary'] = field_string
             if secure is True:
