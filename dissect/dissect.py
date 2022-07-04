@@ -500,7 +500,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                                             logger.debug(f"{layer_title} geometry fixed and clipped")
                                         except:
                                             self.failed_layers.append(layer_title)
-                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='BCGW - data/geometry issue')
+                                            report_obj.add_failed(layer_title, key, comment='BCGW - data/geometry issue')
                                             feedback.pushInfo(f"Error in accessing {layer_title}")
                                     if result is not None:
                                         # feedback.pushInfo(f"result type {type(result)}")
@@ -511,15 +511,15 @@ class DissectAlg(QgsProcessingAlgorithm):
                                     if has_table:
                                         feedback.pushInfo(f"No data in table: BCGW {layer_table}")
                                         self.failed_layers.append(layer_title)
-                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='No data in table: BCGW')
+                                        report_obj.add_failed(layer_title, key, comment='No data in table: BCGW')
                                         logger.debug(f"{layer_title} contains no rows")
                                     else:
                                         feedback.pushInfo(f"Can not access: BCGW {layer_table}")
                                         self.failed_layers.append(layer_title)
                                         if layer_table not in self.protected_tables:
-                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not access on BCGW - invalid schema/table or insufficient access')
+                                            report_obj.add_failed(layer_title, key, comment='Could not access on BCGW - invalid schema/table or insufficient access')
                                         else:
-                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='🔒 Could not access on BCGW (protected table, likely insufficient access)')
+                                            report_obj.add_failed(layer_title, key, comment='🔒 Could not access on BCGW (protected table, likely insufficient access)')
                                         logger.debug(f"{layer_title} could not be accessed")
                             elif (location is not None): # non-db file path
                                 if os.path.exists(location):
@@ -551,20 +551,20 @@ class DissectAlg(QgsProcessingAlgorithm):
                                         if vlayer.isValid() == False:
                                             feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
                                             self.failed_layers.append(layer_title)
-                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid input')
+                                            report_obj.add_failed(layer_title, key, comment='Not a valid input')
                                     elif file_extension in ['.tif']:
                                         rlayer = QgsRasterLayer(location,layer_title)
                                         if rlayer.isValid() == False:
                                             feedback.pushInfo(f"Failed to add {layer_title}:{filename}")
                                             self.failed_layers.append(layer_title)
-                                            report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid raster input')
+                                            report_obj.add_failed(layer_title, key, comment='Not a valid raster input')
                                     elif file_extension in ['.gdb','gpkg']:
                                         ogr_string = f"{location}|layername={layer_table}{location_sql}"
                                         vlayer = QgsVectorLayer(ogr_string, layer_title, "ogr")
                                     else:
                                         feedback.pushInfo(f"No loading function for {layer_title}: {location}")
                                         self.failed_layers.append(layer_title)
-                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path or input type')
+                                        report_obj.add_failed(layer_title, key, comment='Not a valid file path or input type')
                                     if vlayer is not None:
                                         logger.debug(f'{layer_title} is vector layer, starting processing')
                                         try:
@@ -599,7 +599,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                                                     except:
                                                         logger.error(f'{layer_title} could not reproject to 3005')
                                                         self.failed_layers.append(layer_title) 
-                                                        report_obj.add_failed(layer_title, layer_subgroup, key, comment='Could not reproject result to BC Albers (try reprojecting input)')
+                                                        report_obj.add_failed(layer_title, key, comment='Could not reproject result to BC Albers (try reprojecting input)')
                                                         break
                                                 feature_layer_lst.append(result)
                                                 logger.debug(f'{layer_title} added to feature_layer_lst')
@@ -683,7 +683,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                                     # os.path.exists(location) == False
                                     feedback.pushInfo(f"Can not make valid: {location}")
                                     self.failed_layers.append(layer_title)
-                                    report_obj.add_failed(layer_title, layer_subgroup, key, comment='Not a valid file path')
+                                    report_obj.add_failed(layer_title, key, comment='Not a valid file path')
 
                             aoi.removeSelection()
 
@@ -745,6 +745,8 @@ class DissectAlg(QgsProcessingAlgorithm):
                             except Exception as e:
                                 feedback.pushInfo(f"Failed to add {layer_title} to map/report")
                                 logger.error(f'{layer_title}: failed to add to map/report - {str(e)}')
+                                self.failed_layers.append(layer_title)
+                                report_obj.add_failed(layer_title, key, comment=str(e))
                             finally:
                                 result = None
                                 interest = None
@@ -996,12 +998,11 @@ class report:
             data = json.load(f)
         return json.dumps(data)
 
-    def add_failed(self, layer_title, subgroup, group, comment=None):
+    def add_failed(self, layer_title, group, comment=None):
         ''' add a failed interest to the report'''
         logger.debug(f"REPORT add failed layer: {layer_title}")
         failedLyr = {'name':layer_title,
             'group':group,
-            'subgroup':subgroup,
             'comment':comment}   
 
         self.failedLyrs.append(failedLyr)
