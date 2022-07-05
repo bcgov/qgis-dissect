@@ -231,11 +231,11 @@ class DissectAlg(QgsProcessingAlgorithm):
     def icon(self):
         try:
             import urllib.request
-            url = "https://raw.githubusercontent.com/bcgov/qgis-reports-plugin/alg/microscope_larger1.svg"
+            url = "https://raw.githubusercontent.com/bcgov/qgis-reports-plugin/alg/microscope_larger2.svg"
             r = urllib.request.urlopen(url)
-            with open("microscope_larger1.svg", "wb") as f:
+            with open("microscope_larger2.svg", "wb") as f:
                 f.write(r.read())
-            qicon = QIcon('microscope_larger1.svg')
+            qicon = QIcon('microscope_larger2.svg')
             return qicon
         except:
             qicon = QIcon(r'E:\sw_nt\QGIS_3.22\apps\qgis\python\plugins\db_manager\icons\view.png')
