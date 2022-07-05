@@ -228,18 +228,19 @@ class DissectAlg(QgsProcessingAlgorithm):
     def helpUrl(self):
         return 'https://github.com/bcgov/qgis-reports-plugin/tree/alg'
        
-    def icon(self):
-        try:
-            import urllib.request
-            url = "https://raw.githubusercontent.com/bcgov/qgis-reports-plugin/alg/microscope_larger2.svg"
-            r = urllib.request.urlopen(url)
-            with open("microscope_larger2.svg", "wb") as f:
-                f.write(r.read())
-            qicon = QIcon('microscope_larger2.svg')
-            return qicon
-        except:
-            qicon = QIcon(r'E:\sw_nt\QGIS_3.22\apps\qgis\python\plugins\db_manager\icons\view.png')
-            return qicon
+    def icon(self):       
+        ### fetch custom icon from github
+        # import urllib.request
+        # url = "https://raw.githubusercontent.com/bcgov/qgis-reports-plugin/alg/microscope_larger3.svg"
+        # r = urllib.request.urlopen(url)
+        # with open("microscope_larger3.svg", "wb") as f:
+        #     f.write(r.read())
+        # qicon = QIcon('microscope_larger3.svg')
+        # return qicon
+        
+        icon_path = os.path.join(os.getcwd(),r'apps\qgis\python\plugins\db_manager\icons\view.png')
+        qicon = QIcon(icon_path)
+        return qicon
 
     def initAlgorithm(self, config=None):
         """
