@@ -372,7 +372,11 @@ class DissectAlg(QgsProcessingAlgorithm):
         # dictionary returned by the processAlgorithm function.
         
         aoiSource = self.parameterAsSource(parameters, 'AOI', context)
-        aoi = aoiSource.materialize(QgsFeatureRequest())
+        try:
+            aoi = aoiSource.materialize(QgsFeatureRequest())
+        except Exception:
+            logger.critical('AOI has invalid geometry')
+            feedback.pushInfo('ERROR: AOI has invalid geometry, try fixing with "Fix Geometries" tool')
         config_xls = self.parameterAsFile(parameters, 'XLS_CONFIG_IN', context)
         auth_method_id = self.parameterAsString(parameters, 'AUTH_CONFIG', context)
         output_html = self.parameterAsFileOutput(parameters, 'OUTPUT', context)
@@ -621,7 +625,9 @@ class DissectAlg(QgsProcessingAlgorithm):
                                                         break
                                                 feature_layer_lst.append(result)
                                                 logger.debug(f'{layer_title} added to feature_layer_lst')
-                                                feedback.pushInfo(f"{layer_title}: ({result.featureCount()}) overlapping features found")
+                                                fc = result.featureCount()
+                                                feedback.pushInfo(f"{layer_title}: ({fc}) overlapping features found")
+                                                logger.debug(f"{layer_title}: ({fc}) overlapping features found")
                                     elif rlayer is not None:
                                         enable_raster = False
                                         # work below for feature to report on raster layers. This is disabled and
@@ -855,8 +861,9 @@ class report:
         for f in features:
             geom = f.geometry()
             geom_type = QgsWkbTypes.displayString(geom.wkbType())
-            assert geom_type in ['Polygon','MultiPolygon','Polygon25D','MultiPolygonZ'], "Area of interestest must be polygonal"
+            assert geom_type in ['Polygon','MultiPolygon','Polygon25D','MultiPolygonZ'], "Area of interest must be polygonal"
             a += geom.area()
+        logger.debug(f'AOI area: {round(a/10000,1)} ha')
         file_name = aoi.name().replace(' ','_').replace('.','_') + ".geojson"
         file_name = file_name.replace('/','_')
         file_name = file_name.replace('\\','_')
@@ -868,7 +875,6 @@ class report:
         os.makedirs(geojson_dir)
         geojson = self.vectorlayer_to_geojson(aoi, geojson_path)
         bb = self.get_bb(aoi,4326)
-        # bb = self.get_bb(aoi,4326)
         name = aoi.name()
         d = {'name':name,'area':a,'bounds':bb, 'geojson':geojson}
         return d
