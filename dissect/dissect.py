@@ -228,6 +228,19 @@ class DissectAlg(QgsProcessingAlgorithm):
     def helpUrl(self):
         return 'https://github.com/bcgov/qgis-reports-plugin/tree/alg'
        
+    def icon(self):
+        try:
+            import urllib.request
+            url = "https://raw.githubusercontent.com/bcgov/qgis-reports-plugin/alg/icon.svg"
+            r = urllib.request.urlopen(url)
+            with open("icon.svg", "wb") as f:
+                f.write(r.read())
+            qicon = QIcon('icon.svg')
+            return qicon
+        except:
+            qicon = QIcon(r'E:\sw_nt\QGIS_3.22\apps\qgis\python\plugins\db_manager\icons\view.png')
+            return qicon
+
     def initAlgorithm(self, config=None):
         """
         Here we define the inputs and output of the algorithm, along
