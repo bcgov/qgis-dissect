@@ -224,7 +224,10 @@ class DissectAlg(QgsProcessingAlgorithm):
         If desired, check 'Add overlapping interests to map' to have intersecting features added in QGIS (including all original attributes).
         Advanced Parameters include setting the interest configuration file and database settings. Default values for these parameters can be set in Options/Advanced/dissect.
         """)
-        
+
+    def helpUrl(self):
+        return 'https://github.com/bcgov/qgis-reports-plugin/tree/alg'
+       
     def initAlgorithm(self, config=None):
         """
         Here we define the inputs and output of the algorithm, along
@@ -374,7 +377,7 @@ class DissectAlg(QgsProcessingAlgorithm):
         aoi_in = aoi
         xls_file = config_xls
         output = output_html
-        
+        logger.debug('Getting auth config')
         # get the application's authenticaion manager
         auth_mgr = QgsApplication.authManager()
         # create an empty authmethodconfig object
@@ -386,10 +389,11 @@ class DissectAlg(QgsProcessingAlgorithm):
         try:
             user = auth_info['username']
             password = auth_info['password']
+            logger.debug('Auth config loaded')
         except:
             user = ''
             password = ''
-
+            logger.debug('Blank user and password loaded')
         try:
                 ## TODO set up warning for many featured input
                 # if aoi_in.featureCount()>20:
@@ -1102,8 +1106,8 @@ class oracle_pyqgis:
                     self.open_db_connection()
                 assert self.db.isOpen()
             except:
-                logging.error(f"Failed to connect to {self.database}/{self.host}")
-                raise Exception(f"Failed to connect to {self.database}/{self.host}")
+                logging.error(f"Failed to connect to database: {self.database}/{self.host} - Check user/pass")
+                raise Exception(f"Failed to connect to database: {self.database}/{self.host} - check username/password")
 
                 
                 
