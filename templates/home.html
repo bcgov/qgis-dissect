@@ -26,7 +26,9 @@
                 Intersect: {{ i['value'] | round(1) }} {{ i['unit'] }}
                 </span>
               </p></h3>
-                {%if i['field_summary'].items()|length > 0 %}
+              {%if i['field_summary'].items()|length > 0 %}
+              <button type="button" class="collapsible">{{i['field_names_summary']}}</button>
+              <div class = "details">
                 <table class="table table-striped">
                   <thead>
                     <tr>
@@ -46,7 +48,8 @@
                   {% endfor %}
                 </tbody>
                 </table>
-                {%endif%}
+              </div>
+              {%endif%}
               {% else %}
               <h3><p class="article-title" style="display:block;">{{ i['name'] }}
                 <span style="display:block; float:right; font-weight:normal; color: #818182;">
