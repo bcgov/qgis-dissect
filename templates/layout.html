@@ -22,7 +22,14 @@
     }
 
     h1, h2, h3, h4, h5, h6 {
+      padding: 5px;
       color: #444444;
+    }
+    h3{
+      padding-bottom: 0px;
+    }
+    button {
+      margin-bottom:10px;
     }
     #map {
         height: 400px;
@@ -117,53 +124,51 @@
   </style>
 
   {% if title %}
-  <title>Referal Report - {{ title }}</title>
+  <title>Referral Report - {{ title }}</title>
   {% else %}
-  <title>Referal Report</title>
+  <title>Referral Report</title>
   {% endif %}
 </head>
 <body>
     <header class="site-header">
       <nav class="navbar navbar-expand-md navbar-dark bg-steel fixed-top">
         <div class="container">
-          <a class="navbar-brand mr-4" href="">Terrestrial Habitat Decision Support</a>
+          <a class="navbar-brand mr-4" href="">Referral Report</a>
           <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarToggle" aria-controls="navbarToggle" aria-expanded="false" aria-label="Toggle navigation">
             <span class="navbar-toggler-icon"></span>
           </button>
           <div class="collapse navbar-collapse" id="navbarToggle">
               <div class="navbar-nav mr-auto"></div>
               <div class="navbar-nav">
-                  <span class="nav-item nav-text date-txt">{{reportDate}}</span>
+                  <span class="nav-item nav-text date-txt">Generated with <a href="https://github.com/bcgov/qgis-reports-plugin/tree/alg" style="color:white; font-weight:bold;">dissect</a> on {{reportDate}}</span>
               </div>
           </div>
         </div>
       </nav>
     </header>
-    <button type="button" class="btn btn-secondary" data-filter='all'>All</button>
-    <button type="button" class="btn btn-secondary" data-filter='Wildlife_and_Habitat'>Wildlife and Habitat</button>
-    <button type="button" class="btn btn-secondary" data-filter='Terrestrial_Ecosystem_Data'>Ecosystem Data</button>
-    <button type="button" class="btn btn-secondary" data-filter='Invasive_Species'>Invasives</button>
-    <button type="button" class="btn btn-secondary" data-filter='Legal_Land_Designations'>Land Designations</button>
-    <button type="button" class="btn btn-secondary" data-filter='Administrative_Boundaries'>Admin Boundaries</button>
-    <button type="button" class="btn btn-secondary" data-filter='Land_Use_Planning'>Land Use</button>
-    <button type="button" class="btn btn-secondary" data-filter='Land_Ownership_and_Status'>Ownership-Status</button>
 
-    <div class="tab-content">
-      <div class="content-section col-md-10">
-        <h3>Area Of Interest</h3>
-        
-        
-            <ul class="list-group">
-                <li class="list-group-item list-group-item-light">{{(aoi['area']/10000)|round(1)}} ha</li>
-            </ul>
+    <div class="tab-content" style="height:100%">
+      <div class="content-section col-md-10" style="position:fixed; z-index:1;	vertical-align: top;	width: 40%;">
+        <h3><p>Area Of Interest<span style="float:right; font-weight:normal; font-size: 50%">{{(aoi['area']/10000)|round(1)}} ha</span></p></h3>
         <div class="content-section" id= 'map'></div>
+        <div>
+          <h3 style="padding-bottom: 0%;"><p class="article-title">Filters</p></h3>
+          <button type="button" class="btn btn-secondary" data-filter='all'>All</button>
+          <button type="button" class="btn btn-secondary" data-filter='Wildlife_and_Habitat'>Wildlife and Habitat</button>
+          <button type="button" class="btn btn-secondary" data-filter='Terrestrial_Ecosystem_Data'>Ecosystem Data</button>
+          <button type="button" class="btn btn-secondary" data-filter='Invasive_Species'>Invasives</button>
+          <button type="button" class="btn btn-secondary" data-filter='Legal_Land_Designations'>Land Designations</button>
+          <button type="button" class="btn btn-secondary" data-filter='Administrative_Boundaries'>Admin Boundaries</button>
+          <button type="button" class="btn btn-secondary" data-filter='Land_Use_Planning'>Land Use</button>
+          <button type="button" class="btn btn-secondary" data-filter='Land_Ownership_and_Status'>Ownership-Status</button>
+        </div>
       </div>
-      <div class="row">
+      <div class="row" style="margin-left: 40%; display: inline-block;	vertical-align: top;	height: 100%;	width: 60%;	overflow-y: auto;">
         <div class="col-md-10">
           {% block content %}{% endblock %}
         </div>
       </div>
-      <div class="row">
+      <div class="row" style="margin-left: 40%; display: inline-block;	vertical-align: top;	height: 100%;	width: 60%;	overflow-y: auto;">
         <div class="col-md-10">
           {% block failed %}{% endblock %}
         </div>

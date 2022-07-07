@@ -3,22 +3,29 @@
     {% for i in interests %}
           <article class="value {{ i['group']|replace(' ', '_') }} media content-section">
             <div id= "value_data" class="media-body">
-              <div class="article-metadata">
+              {% if i['value'] is defined %}
+              
                 {% if i['geojson'] is not none %}
+                <div class="article-metadata">
                 <div class="custom-control custom-switch">
                   <input type="checkbox" class="custom-control-input" id="{{ i['name']|replace(' ','_') }}_switch">
                   <label class="custom-control-label" for="{{ i['name']|replace(' ','_') }}_switch">Draw on map</label>
                 </div>
+                </div>
                 {% endif %}
-              </div>
-              {% if i['value'] is defined %}
-              <div class="article-metadata">
+              
+              
                 {% if i['secure']%}
+                <div class="article-metadata">
                 <label>&nbsp🔒 Geometry protected</label>
+                </div>
                 {% endif %}
-              </div>
-              <h3><p class="article-title">{{ i['name'] }}</p></h3>
-              <p class="list-group-item list-group-item-light">Intersect Summary: {{ i['value'] | round(1) }} {{ i['unit'] }}</p>
+              
+              <h3><p class="article-title" style="display:block;">{{ i['name'] }}
+                <span style="display:block; float:right; font-weight:normal; color: #818182;">
+                Intersect: {{ i['value'] | round(1) }} {{ i['unit'] }}
+                </span>
+              </p></h3>
                 {%if i['field_summary'].items()|length > 0 %}
                 <table class="table table-striped">
                   <thead>
@@ -41,8 +48,11 @@
                 </table>
                 {%endif%}
               {% else %}
-              <h3><p class="article-title">{{ i['name'] }}</p></h3>
-              <p class="list-group-item list-group-item-light">Intersect Summary: No overlaps</p>
+              <h3><p class="article-title" style="display:block;">{{ i['name'] }}
+                <span style="display:block; float:right; font-weight:normal; color: #818182;">
+                No overlaps
+                </span>
+              </p></h3>
               {% endif %}
             </div>
           </article>
@@ -55,9 +65,6 @@
     {% for i in failedLyrs %}
           <article class="value {{ i['subgroup']|replace(' ', '_') }} media content-section">
             <div id= "value_data" class="media-body">
-              <div class="article-metadata">
-
-              </div>
               <h3><p class="article-title">{{ i['group'] }}: {{ i['name'] }}</p></h3>
               {% if i['comment'] is not none %}
               <p class="list-group-item list-group-item-light">Failed layer: {{i['comment']}}</p>
