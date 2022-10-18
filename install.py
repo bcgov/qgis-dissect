@@ -63,7 +63,7 @@ if os.path.exists('config.yml'): # if running with boilerplate
 else: # QGIS console will not have script path as current working directory
     from console.console import _console
     install_path = os.path.dirname(_console.console.tabEditorWidget.currentWidget().path)
-    config_yml = os.path.join(os.path.dirname(install_path),'config.yml')
+    config_yml = os.path.join(install_path,'config.yml')
     root = install_path
     
 s.beginWriteArray('dissect')
