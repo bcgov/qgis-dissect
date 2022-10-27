@@ -237,6 +237,7 @@
         const map = L.map("map",{ zoomControl:false }).fitBounds({{aoi.bounds}}, {padding: [50, 50]});
         //L.esri.basemapLayer("Topographic").addTo(map);
         const basemapLayers = {
+    	  "Imagery":L.esri.basemapLayer('Imagery').addTo(map),
           "Topographic(D)":L.esri.basemapLayer('Topographic').addTo(map)
           //,"Imagery": L.esri.Vector.vectorBasemapLayer('ArcGIS:Imagery', {API_KEY: API_KEY}).addTo(map),
           //"Topographic": L.esri.Vector.vectorBasemapLayer('ArcGIS:Topographic', {API_KEY: API_KEY}).addTo(map)
