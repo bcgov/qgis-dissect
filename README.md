@@ -63,6 +63,7 @@ When complete, the Results Viewer panel should open on the bottom right with a h
 ![Results viewer panel](https://user-images.githubusercontent.com/38586679/177389872-c55e4cf4-e0e1-4553-8622-44ad9c951e89.png)
 
 Use the buttons below the map to filter interests by category. Use the 'Draw on map' switch to make interests visible on the map.
+
 ![Filter buttons](https://user-images.githubusercontent.com/38586679/200076079-1e62b059-6375-46f4-9bf5-3e257411e5b3.png)
 
 At the bottom of the report page, failed layers, ie data which could not be processed and are not included in the report, are listed. The comment included should provide direction for how to resolve the issue, if possible, or whether perhaps you lack access to the requested data.
