@@ -3,7 +3,7 @@
 A plugin reporting overlapping GIS datasets
 
 ## Installation
-1. Download repo
+1. Download repo - or BC gov employees can head to `...\script_whse\python\Reporting\In_Progress\dissect`
 2. Copy `example_config.yml` to the root folder and rename to `config.yml`
 3. Modify optional default parameters as desired
 4. Run `install.py`:
