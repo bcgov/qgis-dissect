@@ -87,5 +87,11 @@ if newFolder not in scriptFolders:
 scriptFolders = ';'.join(scriptFolders)
 s.setValue('Processing/Configuration/SCRIPTS_FOLDERS', scriptFolders)
 
+# add icon to toolbar
+app = get_from_yaml('application', config_yml)
+appMenu = app['menu']
+s.setValue('Processing/Configuration/MENU_script:dissect_alg',f'Vect&or/{appMenu}')
+s.setValue('Processing/Configuration/BUTTON_script:dissect_alg','true')
+s.setValue('Processing/Configuration/ICON_script:dissect_alg', app['icon'].replace('\\','/'))
 s.sync()
 print('Settings configured - restart QGIS if currently running')

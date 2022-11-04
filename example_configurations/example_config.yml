@@ -1,5 +1,7 @@
 application:
   root: # setting defaults to repo root dir if undefined here
+  icon: # path to icon for toolbar
+  menu: # name of toolbar (eg. habitat)
   # WARNING - it may be necessary to manually populate root with an escaped string
 
 # OPTIONAL define default parameters
