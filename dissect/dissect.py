@@ -70,6 +70,13 @@ from PyQt5.QtGui import *
 # dev only
 import logging
 
+# install pandas optional dependency openpyxl if not installed
+try:
+    import openpyxl
+except:
+    import pip
+    pip.main(['install','openpyxl'])
+
 MESSAGE_CATEGORY = 'Messages'
 
 # def enable_logging():
