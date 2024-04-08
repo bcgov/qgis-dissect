@@ -70,13 +70,6 @@ from PyQt5.QtGui import *
 # dev only
 import logging
 
-# install pandas optional dependency openpyxl if not installed
-try:
-    import openpyxl
-except:
-    import pip
-    pip.main(['install','openpyxl'])
-
 MESSAGE_CATEGORY = 'Messages'
 
 # def enable_logging():
@@ -487,7 +480,7 @@ class DissectAlg(QgsProcessingAlgorithm):
                             if location is not None:
                                 location = location.strip()
                             layer_sql = dic['Display Query']
-                            if layer_sql is None:
+                            if layer_sql is None or type(layer_sql) is not str:
                                 layer_sql = ''
                             layer_expansion = dic['Attribute ID']
                             # TODO remove feature_layer_lst
