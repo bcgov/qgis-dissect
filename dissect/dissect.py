@@ -861,7 +861,7 @@ class report:
         for f in features:
             geom = f.geometry()
             geom_type = QgsWkbTypes.displayString(geom.wkbType())
-            assert geom_type in ['Polygon','MultiPolygon','Polygon25D','MultiPolygonZ'], "Area of interest must be polygonal"
+            assert geom_type in ['Polygon','PolygonZ','MultiPolygon','Polygon25D','MultiPolygonZ'], "Area of interest must be polygonal"
             a += geom.area()
         logger.debug(f'AOI area: {round(a/10000,1)} ha')
         file_name = aoi.name().replace(' ','_').replace('.','_') + ".geojson"
@@ -908,7 +908,7 @@ class report:
             
             if (geom_type in ['Point','MultiPoint']):
                 d['count'] += 1
-            elif (geom_type in ['Polygon','MultiPolygon','MultiPolygonZ']):             
+            elif (geom_type in ['Polygon','PolygonZ','MultiPolygon','MultiPolygonZ']):             
                 d['count'] += 1
                 a = geom.area()
                 d['area'] += a
