@@ -14,7 +14,7 @@
 import sys
 import os
 import traceback
-
+import subprocess
 import jinja2
 import json
 import datetime
@@ -89,28 +89,6 @@ try:
 except:
     QgsMessageLog.logMessage("Failed to enable logging", MESSAGE_CATEGORY, Qgis.Info)
 
-# enable_logging()
-
-def enable_remote_debugging(self):
-    try:
-        import ptvsd
-        if ptvsd.is_attached():
-            QgsMessageLog.logMessage("Remote Debug for Visual Studio is already active", MESSAGE_CATEGORY, Qgis.Info)
-            logger.debug('Remote Debug for Visual Studio already attached')
-            return
-        # ptvsd.enable_attach(address=('localhost', 5678), log_dir=os.path.join(self.CONFIG_PATH, 'ptvsd_log'))
-        ptvsd.enable_attach(address=('localhost', 5678))
-        QgsMessageLog.logMessage("Attached remote Debug for Visual Studio", MESSAGE_CATEGORY, Qgis.Info)
-        logger.debug('Attached remote Debug for Visual Studio')
-
-    except Exception as e:
-        logger.debug('Remote debug failed to attach')
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        format_exception = traceback.format_exception(exc_type, exc_value, exc_traceback)
-        QgsMessageLog.logMessage(str(e), MESSAGE_CATEGORY, Qgis.Critical)        
-        QgsMessageLog.logMessage(repr(format_exception[0]), MESSAGE_CATEGORY, Qgis.Critical)
-        QgsMessageLog.logMessage(repr(format_exception[1]), MESSAGE_CATEGORY, Qgis.Critical)
-        QgsMessageLog.logMessage(repr(format_exception[2]), MESSAGE_CATEGORY, Qgis.Critical)
 class DissectAlg(QgsProcessingAlgorithm):
     """
     Extending QgsProcessingAlgorithm class.
@@ -138,19 +116,9 @@ class DissectAlg(QgsProcessingAlgorithm):
         logger.debug(f'TEST_MODE is equal to: {TEST_MODE}')
         logger.debug(f'CONFIG_PATH is equal to: {self.CONFIG_PATH}')
 
-        # try:
-        # enable_logging()
-        # except: 
-        #     QgsMessageLog.logMessage("Logging not enabled", MESSAGE_CATEGORY, Qgis.Critical)
-
         self.startTime = time.time()
         logger.debug('|-----------------Run started at ' + datetime.datetime.now().strftime("%d%m%Y-%H-%M-%S-----------------|"))
         
-        try:
-            enable_remote_debugging(self)
-        except: 
-            QgsMessageLog.logMessage("Debug for VS not enabled", MESSAGE_CATEGORY, Qgis.Info)
-
         self.SECURE_TABLES_CONFIG = os.path.join(self.CONFIG_PATH,"config.yml")
         self.protected_tables = self.get_protected_tables(self.SECURE_TABLES_CONFIG)
 
@@ -340,7 +308,14 @@ class DissectAlg(QgsProcessingAlgorithm):
                             'Column2':'',
                             'Column3':'',
                             'Column4':''},{}]
+            since version 1.3.0 pandas requires openpyxl for reading xl file
         '''
+        try:
+            import openpyxl
+        except:
+            logger.info('Installing openpyxl requirement')
+            spr = subprocess.check_call(['python',"-m","pip", "install","-U","openpyxl"])
+            logger.debug('openpyxl installed')
         assert os.path.exists(xlsx)
         os.path
         data = []
@@ -358,8 +333,8 @@ class DissectAlg(QgsProcessingAlgorithm):
         Here is where the processing itself takes place.
         """
         try:
-            import ptvsd
-            ptvsd.debug_this_thread()
+            import debugpy
+            debugpy.debug_this_thread()
         except:
             feedback.pushInfo("Debug for VS not enabled")
 
@@ -836,8 +811,6 @@ class report:
             geojson:'filepath'
         }
     '''
-    # import ptvsd
-    # ptvsd.debug_this_thread()
 
     TEMPLATE_RELATIVE_PATH = 'templates'
 
